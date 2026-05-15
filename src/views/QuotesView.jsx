@@ -4,6 +4,8 @@ import Icon from '../components/Icon.jsx'
 import Avatar from '../components/Avatar.jsx'
 import StatusPill from '../components/StatusPill.jsx'
 import { fmtPEN } from '../data.js'
+import ConfigEmisor from '../components/cotizaciones/ConfigEmisor.jsx'
+import { loadEmisor } from '../services/emisorService.js'
 
 // ── Helpers ───────────────────────────────────────
 function nextQuoteId(quotes) {
@@ -53,12 +55,19 @@ function emptyEquipment() {
 }
 
 // ── PDF Export ────────────────────────────────────
-function exportQuotePDF(quote, settings) {
+// Lee el emisor desde el service en el momento de exportar,
+// así siempre usa los datos más recientes sin necesidad de
+// pasar props. Cuando migremos a Supabase, solo cambia loadEmisor().
+function exportQuotePDF(quote) {
+  const emisor = loadEmisor()
+
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const W = 210, pad = 18
 
-  // ── Brand color (accent orange/red) ──────────────
-  const BRAND  = [194, 65, 12]   // #c2410c
+  // ── Colores del header (verde teal corporativo) ───
+  const BRAND  = [29, 158, 117]  // #1D9E75
+  const BRAND_TAG  = [159, 225, 203] // #9FE1CB (rgb)
+  const BRAND_META = [200, 240, 228] // #C8F0E4 (rgb)
   const INK    = [28, 25, 23]
   const MUTE   = [120, 113, 108]
   const LIGHT  = [250, 248, 244]
@@ -66,33 +75,56 @@ function exportQuotePDF(quote, settings) {
 
   let y = 0
 
-  // Header strip
-  doc.setFillColor(...BRAND)
-  doc.rect(0, 0, W, 28, 'F')
+  // ── Header strip ─────────────────────────────────
+  // Calculamos altura dinámica según datos disponibles del emisor
+  const contactLine = [emisor.email, emisor.telefono].filter(Boolean).join(' · ')
+  const metaLine    = [emisor.ruc && `RUC ${emisor.ruc}`, emisor.direccion, emisor.web].filter(Boolean).join(' · ')
+  const headerH = 18 + (emisor.tagline ? 5 : 0) + (contactLine ? 5 : 0) + (metaLine ? 5 : 0)
 
-  // Brand name
+  doc.setFillColor(...BRAND)
+  doc.rect(0, 0, W, headerH, 'F')
+
+  // Nombre de empresa
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.setTextColor(255, 255, 255)
-  doc.text(settings?.name || 'Mi Empresa', pad, 13)
+  doc.text(emisor.nombre || 'Mi Empresa', pad, 13)
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(255, 220, 200)
-  const roleStr = [settings?.role, settings?.industry].filter(Boolean).join(' · ')
-  if (roleStr) doc.text(roleStr, pad, 20)
+  let hy = 20
+  if (emisor.tagline) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...BRAND_TAG)
+    doc.text(emisor.tagline, pad, hy)
+    hy += 5
+  }
+  if (contactLine) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...BRAND_META)
+    doc.text(contactLine, pad, hy)
+    hy += 5
+  }
+  if (metaLine) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...BRAND_META)
+    doc.text(metaLine, pad, hy)
+  }
 
-  // Quote label (right)
+  // Quote label (derecha)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
-  doc.setTextColor(255, 255, 255)
+  doc.setTextColor(...BRAND_TAG)
   doc.text('COTIZACIÓN', W - pad, 10, { align: 'right' })
   doc.setFontSize(14)
+  doc.setTextColor(255, 255, 255)
   doc.text(quote.id, W - pad, 18, { align: 'right' })
 
-  y = 38
+  y = headerH + 10
 
   // ── Client + meta block ───────────────────────────
+  const clientBlockY = y
   // Left: client info
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
@@ -114,10 +146,9 @@ function exportQuotePDF(quote, settings) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...MUTE)
-  const metaY = 38
-  doc.text(`Fecha de emisión: ${quote.issued}`, col2, metaY, { align: 'right' })
-  doc.text(`Vigencia: ${quote.validity} días`, col2, metaY + 5, { align: 'right' })
-  doc.text(`Proyecto: ${quote.project || '—'}`, col2, metaY + 10, { align: 'right' })
+  doc.text(`Fecha de emisión: ${quote.issued}`, col2, clientBlockY, { align: 'right' })
+  doc.text(`Vigencia: ${quote.validity} días`, col2, clientBlockY + 5, { align: 'right' })
+  doc.text(`Proyecto: ${quote.project || '—'}`, col2, clientBlockY + 10, { align: 'right' })
 
   y += 12
 
@@ -661,9 +692,10 @@ function RangePanel({ quotes }) {
 
 // ── Main view ─────────────────────────────────────
 export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDeleteQuote, onChangeStatus, clients = [], settings }) {
-  const [mode, setMode]         = useState('list')   // 'list' | 'new' | 'edit'
+  const [mode, setMode]                 = useState('list')   // 'list' | 'new' | 'edit'
   const [editingQuote, setEditingQuote] = useState(null)
   const [selectedId, setSelectedId]     = useState(null)
+  const [showConfig, setShowConfig]     = useState(false)
 
   const selectedQuote = useMemo(() => quotes.find(q => q.id === selectedId), [quotes, selectedId])
 
@@ -711,6 +743,16 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
               ← Volver al listado
             </button>
           )}
+          {/* Engranaje — siempre visible, discreto */}
+          <button
+            className="btn btn-ghost"
+            onClick={() => setShowConfig(true)}
+            title="Configurar datos del emisor"
+            style={{ padding: '7px 10px' }}
+          >
+            <Icon name="settings" size={14} />
+            <span style={{ fontSize: 12, marginLeft: 4 }}>Emisor</span>
+          </button>
           {mode === 'list' && (
             <button className="btn btn-primary" onClick={() => { setMode('new'); setEditingQuote(null) }}>
               <Icon name="plus" size={14} /> Nueva cotización
@@ -789,7 +831,7 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
                     <div className="ink-mute">{selectedQuote.project}</div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-ghost" onClick={() => exportQuotePDF(selectedQuote, settings)}>
+                    <button className="btn btn-ghost" onClick={() => exportQuotePDF(selectedQuote)}>
                       <Icon name="download" size={14} /> Exportar PDF
                     </button>
                     <button className="btn btn-primary" onClick={() => handleEdit(selectedQuote)}>
@@ -893,6 +935,11 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Panel de configuración del emisor ── */}
+      {showConfig && (
+        <ConfigEmisor onClose={() => setShowConfig(false)} />
       )}
     </div>
   )
