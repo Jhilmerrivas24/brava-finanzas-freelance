@@ -3,6 +3,7 @@ import Bar from './Bar.jsx'
 
 const NAV_ITEMS = [
   { id: 'overview',  label: 'Resumen',        icon: 'dashboard' },
+  { id: 'quotes',    label: 'Cotizaciones',   icon: 'quote'     },
   { id: 'invoices',  label: 'Facturas',       icon: 'invoice'   },
   { id: 'clients',   label: 'Clientes',       icon: 'clients'   },
   { id: 'cashflow',  label: 'Flujo de caja',  icon: 'cashflow'  },

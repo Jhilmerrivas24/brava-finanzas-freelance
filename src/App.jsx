@@ -11,6 +11,7 @@ import BillsView from './views/BillsView.jsx'
 import IngresosView from './views/IngresosView.jsx'
 import ConsejosView from './views/ConsejosView.jsx'
 import SettingsView from './views/SettingsView.jsx'
+import QuotesView from './views/QuotesView.jsx'
 import NewInvoiceModal from './modals/NewInvoiceModal.jsx'
 // data.js imported in views directly
 
@@ -67,6 +68,7 @@ export default function App() {
   const [taxInvoices, setTaxInvoices] = useState(() => loadLS('brava:taxInvoices', []))
   const [taxRH, setTaxRH] = useState(() => loadLS('brava:taxRH', []))
   const [taxPurchases, setTaxPurchases] = useState(() => loadLS('brava:taxPurchases', []))
+  const [quotes, setQuotes] = useState(() => loadLS('brava:quotes', []))
 
   // ── Computed real data for Overview ────────────────────────────────────────
   const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
@@ -132,6 +134,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('brava:taxInvoices',  JSON.stringify(taxInvoices))  }, [taxInvoices])
   useEffect(() => { localStorage.setItem('brava:taxRH',        JSON.stringify(taxRH))        }, [taxRH])
   useEffect(() => { localStorage.setItem('brava:taxPurchases', JSON.stringify(taxPurchases)) }, [taxPurchases])
+  useEffect(() => { localStorage.setItem('brava:quotes',       JSON.stringify(quotes))       }, [quotes])
 
   function handleSaveSettings(newSettings) {
     setSettings(newSettings)
@@ -194,6 +197,12 @@ export default function App() {
   const addTaxPurchase    = (x) => setTaxPurchases(xs => [...xs, x])
   const editTaxPurchase   = (x) => setTaxPurchases(xs => xs.map(i => i.id === x.id ? x : i))
   const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
+
+  // Quotes CRUD
+  const addQuote          = (q) => setQuotes(qs => [q, ...qs])
+  const editQuote         = (q) => setQuotes(qs => qs.map(x => x.id === q.id ? q : x))
+  const deleteQuote       = (id) => setQuotes(qs => qs.filter(x => x.id !== id))
+  const changeQuoteStatus = (id, status) => setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x))
 
   const nextId = 'INV-0' + (150 + invoices.filter(i => !SEED_IDS.includes(i.id)).length)
 
@@ -317,6 +326,17 @@ export default function App() {
 
         <div className="scroll">
           {view === 'overview'  && <Overview     {...viewProps} />}
+          {view === 'quotes'    && (
+            <QuotesView
+              quotes={quotes}
+              clients={clients}
+              settings={settings}
+              onAddQuote={addQuote}
+              onEditQuote={editQuote}
+              onDeleteQuote={deleteQuote}
+              onChangeStatus={changeQuoteStatus}
+            />
+          )}
           {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
           {view === 'clients'   && (
             <ClientsView
