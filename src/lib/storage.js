@@ -27,6 +27,13 @@ export const KEYS = {
   settings:         'brava:settings',
   budget:           'brava:budget',
   emergencyFund:    'brava:emergencyFund',
+  // Nuevas entidades (Bloques 2-5)
+  creditLines:      'brava:creditLines',
+  loans:            'brava:loans',
+  loanPayments:     'brava:loanPayments',
+  accountMovements: 'brava:accountMovements',
+  monthlyChecks:    'brava:monthlyChecks',
+  monthlySnapshots: 'brava:monthlySnapshots',
 }
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
@@ -50,6 +57,7 @@ export function saveData(key, data) {
 // ── Supabase table map ────────────────────────────────────────────────────────
 // Maps entity name → Supabase table name
 const TABLE = {
+  // Original tables
   invoices:         'invoices',
   clients:          'clients',
   quotes:           'quotes',
@@ -59,6 +67,13 @@ const TABLE = {
   cashflow:         'cashflow',
   fixedIncome:      'fixed_income',
   accounts:         'accounts',
+  // New tables (Bloques 2-5)
+  creditLines:      'credit_lines',
+  loans:            'loans',
+  loanPayments:     'loan_payments',
+  accountMovements: 'account_movements',
+  monthlyChecks:    'monthly_checks',
+  monthlySnapshots: 'monthly_snapshots',
 }
 
 // ── Auth helper ───────────────────────────────────────────────────────────────

@@ -16,13 +16,17 @@ import IngresosView from './views/IngresosView.jsx'
 import ConsejosView from './views/ConsejosView.jsx'
 import SettingsView from './views/SettingsView.jsx'
 import QuotesView from './views/QuotesView.jsx'
+import AccountsView from './views/AccountsView.jsx'
+import CreditLinesView from './views/CreditLinesView.jsx'
+import LoansView from './views/LoansView.jsx'
+import PaymentsView from './views/PaymentsView.jsx'
 import NewInvoiceModal from './modals/NewInvoiceModal.jsx'
 import { supabase } from './lib/supabase.js'
 import { useAuth } from './auth/AuthContext.jsx'
 import LoginView from './auth/LoginView.jsx'
 import RegisterView from './auth/RegisterView.jsx'
 import ForgotPasswordView from './auth/ForgotPasswordView.jsx'
-// data.js imported in views directly
+import { fmtPEN } from './data.js'
 
 const SEED_IDS = ['INV-0142','INV-0143','INV-0144','INV-0145','INV-0146','INV-0147','INV-0148','INV-0149']
 
@@ -59,6 +63,83 @@ function loadLS(key, fallback) {
     const raw = localStorage.getItem(key)
     return raw ? JSON.parse(raw) : fallback
   } catch { return fallback }
+}
+
+// ── Mark-paid account selector modal ─────────────────────────────────────────
+function MarkPaidModal({ invoice, accounts, onConfirm, onClose }) {
+  const [selectedId, setSelectedId] = useState(null)
+  const TIPO_LABEL = { corriente: 'Cta. corriente', ahorros: 'Ahorros', digital: 'Billetera digital', negocio: 'Negocio', otro: 'Otro' }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Registrar cobro</div>
+            <h2 className="modal-title">¿A qué cuenta entró?</h2>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={18} /></button>
+        </div>
+        <div className="modal-body">
+          {/* Invoice info */}
+          <div style={{
+            marginBottom: 16, padding: '10px 14px',
+            background: 'var(--bg-elev)', borderRadius: 8, fontSize: 13,
+          }}>
+            <div style={{ color: 'var(--ink-mute)', marginBottom: 4 }}>Factura cobrada</div>
+            <div style={{ fontWeight: 700 }}>{invoice.client}</div>
+            <div className="mono" style={{ color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>
+              {fmtPEN(invoice.amount)}
+            </div>
+          </div>
+          {/* Account list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {accounts.map(a => {
+              const nombre = a.nombre ?? a.bank ?? '(sin nombre)'
+              const saldo  = a.saldo  ?? a.balance ?? 0
+              const tipo   = a.tipo   ?? 'corriente'
+              return (
+                <button
+                  key={a.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${selectedId === a.id ? 'var(--accent)' : 'var(--border)'}`,
+                    background: selectedId === a.id
+                      ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-elev))'
+                      : 'var(--bg-elev)',
+                    textAlign: 'left', transition: 'all 0.15s',
+                  }}
+                  onClick={() => setSelectedId(selectedId === a.id ? null : a.id)}
+                >
+                  <Icon name="bank" size={16} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{nombre}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+                      {TIPO_LABEL[tipo] ?? tipo} · Saldo: {fmtPEN(saldo)}
+                    </div>
+                  </div>
+                  {selectedId === a.id && <Icon name="check" size={14} />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={() => onConfirm(null)}>
+            Sin asignar cuenta
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!selectedId}
+            onClick={() => onConfirm(selectedId)}
+          >
+            <Icon name="check" size={14} /> Confirmar cobro
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Auth-gated shell ──────────────────────────────────────────────────────────
@@ -105,6 +186,12 @@ function Dashboard({ signOut, userEmail } = {}) {
   const [goals, setGoals] = useState(() => loadLS('brava:goals', []))
   const [clients, setClients] = useState(() => loadLS('brava:clients', []))
   const [accounts, setAccounts] = useState(() => loadLS('brava:accounts', []))
+  const [accountMovements, setAccountMovements] = useState(() => loadLS('brava:accountMovements', []))
+  const [creditLines, setCreditLines]           = useState(() => loadLS('brava:creditLines', []))
+  const [loans, setLoans]                       = useState(() => loadLS('brava:loans', []))
+  const [loanPayments, setLoanPayments]         = useState(() => loadLS('brava:loanPayments', []))
+  const [monthlyChecks, setMonthlyChecks]       = useState(() => loadLS('brava:monthlyChecks', {}))
+  const [payModal, setPayModal] = useState(null)   // null | { id, amount, client }
   const [taxPeriods, setTaxPeriods] = useState(() => loadLS('brava:taxPeriods', []))
   const [taxInvoices, setTaxInvoices] = useState(() => loadLS('brava:taxInvoices', []))
   const [taxRH, setTaxRH] = useState(() => loadLS('brava:taxRH', []))
@@ -140,7 +227,7 @@ function Dashboard({ signOut, userEmail } = {}) {
     // Only sum bills that are not explicitly paused / inactive
     const outThisMonth = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
 
-    const cashAvailable = accounts.reduce((s, a) => s + (a.balance || 0), 0)
+    const cashAvailable = accounts.reduce((s, a) => s + (a.saldo ?? a.balance ?? 0), 0)
 
     // ── Tax calculations — corrected by docType ───────────────────────────────
     // Only 'factura' (with RUC) and 'rh' generate fiscal obligations.
@@ -199,6 +286,21 @@ function Dashboard({ signOut, userEmail } = {}) {
       .slice(-6)
       .map(m => ({ month: MONTHS_SHORT[(m.month || 1) - 1], inc: m.inc || 0, exp: m.exp || 0 }))
 
+    // Credit card debt
+    const totalCreditDebt = (creditLines || [])
+      .filter(cl => cl.activa !== false)
+      .reduce((s, cl) => s + (cl.usado ?? 0), 0)
+
+    // Loan debt — saldo pendiente de préstamos activos
+    const totalLoanDebt = (loans || [])
+      .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
+      .reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
+
+    // Total monthly loan payments
+    const totalMonthlyCuota = (loans || [])
+      .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
+      .reduce((s, l) => s + (l.cuota ?? 0), 0)
+
     return {
       cashAvailable,
       inThisMonth,
@@ -210,9 +312,12 @@ function Dashboard({ signOut, userEmail } = {}) {
       hoursBilled,
       hoursPaid,
       projectedIncome,
+      totalCreditDebt,
+      totalLoanDebt,
+      totalMonthlyCuota,
       cashflow: cfData,
     }
-  }, [invoices, bills, fixedIncome, cashflow, accounts, settings, quotes, taxPeriods])
+  }, [invoices, bills, fixedIncome, cashflow, accounts, creditLines, loans, settings, quotes, taxPeriods])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
@@ -296,7 +401,12 @@ function Dashboard({ signOut, userEmail } = {}) {
   useEffect(() => { localStorage.setItem('brava:cashflow',    JSON.stringify(cashflow))    }, [cashflow])
   useEffect(() => { localStorage.setItem('brava:goals',       JSON.stringify(goals))       }, [goals])
   useEffect(() => { localStorage.setItem('brava:clients',      JSON.stringify(clients))      }, [clients])
-  useEffect(() => { localStorage.setItem('brava:accounts',     JSON.stringify(accounts))     }, [accounts])
+  useEffect(() => { localStorage.setItem('brava:accounts',         JSON.stringify(accounts))         }, [accounts])
+  useEffect(() => { localStorage.setItem('brava:accountMovements', JSON.stringify(accountMovements)) }, [accountMovements])
+  useEffect(() => { localStorage.setItem('brava:creditLines',      JSON.stringify(creditLines))      }, [creditLines])
+  useEffect(() => { localStorage.setItem('brava:loans',            JSON.stringify(loans))            }, [loans])
+  useEffect(() => { localStorage.setItem('brava:loanPayments',     JSON.stringify(loanPayments))     }, [loanPayments])
+  useEffect(() => { localStorage.setItem('brava:monthlyChecks',    JSON.stringify(monthlyChecks))    }, [monthlyChecks])
   useEffect(() => { localStorage.setItem('brava:taxPeriods',   JSON.stringify(taxPeriods))   }, [taxPeriods])
   useEffect(() => { localStorage.setItem('brava:taxInvoices',  JSON.stringify(taxInvoices))  }, [taxInvoices])
   useEffect(() => { localStorage.setItem('brava:taxRH',        JSON.stringify(taxRH))        }, [taxRH])
@@ -311,10 +421,53 @@ function Dashboard({ signOut, userEmail } = {}) {
     toast.success('Configuración guardada ✓')
   }
 
+  // ── Account movement helper ────────────────────────────────────────────────
+  function addAccountMovement(mov) {
+    setAccountMovements(ms => [mov, ...ms])
+    if (mov.accountId && mov.delta !== undefined) {
+      const acc = accounts.find(a => a.id === mov.accountId)
+      if (acc) {
+        const newSaldo = (acc.saldo ?? acc.balance ?? 0) + mov.delta
+        setAccounts(as => as.map(a =>
+          a.id === mov.accountId ? { ...a, saldo: newSaldo, balance: newSaldo } : a
+        ))
+        sbWrite('accounts', 'update', { id: acc.id, saldo: newSaldo, balance: newSaldo })
+      }
+    }
+  }
+
+  // ── Invoice payment ────────────────────────────────────────────────────────
   const markPaid = (id) => {
+    const inv = invoices.find(i => i.id === id)
+    // If accounts exist, show account-selector modal first
+    const activeAccounts = accounts.filter(a => a.activa !== false)
+    if (activeAccounts.length > 0 && inv) {
+      setPayModal({ id: inv.id, amount: inv.amount, client: inv.client })
+    } else {
+      _confirmMarkPaid({ id, amount: inv?.amount, client: inv?.client }, null)
+    }
+  }
+
+  function _confirmMarkPaid(pm, accountId) {
+    const { id, amount, client } = pm
     setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid' } : i))
     sbWrite('invoices', 'update', { id, status: 'paid' }, id)
-    toast.success('Factura cobrada', 'El estado se actualizó a pagado ✓')
+
+    if (accountId) {
+      addAccountMovement({
+        id:          'mov-' + Date.now(),
+        accountId,
+        type:        'income',
+        description: `Cobro: ${client} · ${id}`,
+        amount:      amount || 0,
+        delta:       amount || 0,
+        date:        new Date().toISOString().split('T')[0],
+        invoiceId:   id,
+      })
+    }
+
+    setPayModal(null)
+    toast.success('Factura cobrada ✓', client ? `${client} — ${fmtPEN(amount || 0)}` : undefined)
   }
   const markUndo = (id) => {
     setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'pending' } : i))
@@ -358,9 +511,77 @@ function Dashboard({ signOut, userEmail } = {}) {
   const deleteClient = (id) => { setClients(cs => cs.filter(x => x.id !== id)); sbWrite('clients', 'delete', null, id); toast.success('Cliente eliminado') }
 
   // Accounts CRUD
-  const addAccount    = (a) => { setAccounts(as => [...as, a]); toast.success('Cuenta agregada', a.bank) }
-  const editAccount   = (a) => { setAccounts(as => as.map(x => x.id === a.id ? a : x)); toast.success('Cuenta actualizada') }
-  const deleteAccount = (id) => { setAccounts(as => as.filter(x => x.id !== id)); toast.success('Cuenta eliminada') }
+  const addAccount    = (a) => { setAccounts(as => [...as, a]); sbWrite('accounts', 'insert', a); toast.success('Cuenta agregada', a.nombre ?? a.bank) }
+  const editAccount   = (a) => { setAccounts(as => as.map(x => x.id === a.id ? a : x)); sbWrite('accounts', 'update', a); toast.success('Cuenta actualizada', a.nombre ?? a.bank) }
+  const deleteAccount = (id) => { setAccounts(as => as.filter(x => x.id !== id)); sbWrite('accounts', 'delete', null, id); toast.success('Cuenta eliminada') }
+
+  // ── Credit line usado sync ─────────────────────────────────────────────────
+  function updateCreditUsado(creditLineId, delta) {
+    const cl = creditLines.find(c => c.id === creditLineId)
+    if (!cl) return
+    const newUsado = Math.max(0, (cl.usado ?? 0) + delta)
+    setCreditLines(cls => cls.map(c => c.id === creditLineId ? { ...c, usado: newUsado } : c))
+    sbWrite('credit_lines', 'update', { id: creditLineId, usado: newUsado })
+  }
+
+  // Credit lines CRUD
+  const addCreditLine    = (cl) => { setCreditLines(cs => [...cs, cl]); sbWrite('credit_lines', 'insert', cl); toast.success('Tarjeta agregada', cl.nombre) }
+  const editCreditLine   = (cl) => { setCreditLines(cs => cs.map(x => x.id === cl.id ? cl : x)); sbWrite('credit_lines', 'update', cl); toast.success('Tarjeta actualizada', cl.nombre) }
+  const deleteCreditLine = (id)  => { setCreditLines(cs => cs.filter(x => x.id !== id)); sbWrite('credit_lines', 'delete', null, id); toast.success('Tarjeta eliminada') }
+
+  // Loans CRUD
+  const addLoan    = (l) => { setLoans(ls => [...ls, l]); sbWrite('loans', 'insert', l); toast.success('Préstamo registrado', l.nombre) }
+  const editLoan   = (l) => { setLoans(ls => ls.map(x => x.id === l.id ? l : x)); sbWrite('loans', 'update', l); toast.success('Préstamo actualizado', l.nombre) }
+  const deleteLoan = (id) => { setLoans(ls => ls.filter(x => x.id !== id)); sbWrite('loans', 'delete', null, id); toast.success('Préstamo eliminado') }
+
+  // Register a loan payment (reduces saldoPendiente + optionally debits account)
+  function registerLoanPayment({ loanId, amount, capital, interes, date, notes, accountId }) {
+    const loan = loans.find(l => l.id === loanId)
+    if (!loan) return
+
+    // Record payment
+    const payment = {
+      id: 'lp-' + Date.now(),
+      loanId, amount, capital: capital ?? amount, interes: interes ?? 0,
+      date: date || new Date().toISOString().split('T')[0],
+      notes: notes || '',
+    }
+    setLoanPayments(ps => [payment, ...ps])
+
+    // Reduce saldo
+    const reduction    = capital ?? amount
+    const newSaldo     = Math.max(0, (loan.saldoPendiente ?? loan.montoOriginal ?? 0) - reduction)
+    const updatedLoan  = { ...loan, saldoPendiente: newSaldo }
+    setLoans(ls => ls.map(l => l.id === loanId ? updatedLoan : l))
+    sbWrite('loans', 'update', { id: loanId, saldoPendiente: newSaldo })
+
+    // Optionally debit from account
+    if (accountId) {
+      addAccountMovement({
+        id:          'mov-' + Date.now(),
+        accountId,
+        type:        'expense',
+        description: `Cuota: ${loan.nombre}`,
+        amount,
+        delta:       -amount,
+        date:        payment.date,
+        loanId,
+      })
+    }
+
+    toast.success('Cuota registrada ✓', `${loan.nombre} — ${fmtPEN(amount)}`)
+  }
+
+  // ── Monthly checklist ──────────────────────────────────────────────────────
+  function toggleMonthlyCheck(type, itemId, yearMonth, paid) {
+    const key = `${type}-${itemId}-${yearMonth}`
+    setMonthlyChecks(mc => {
+      const updated = { ...mc }
+      if (paid) updated[key] = { paid: true, paidAt: new Date().toISOString().split('T')[0] }
+      else      delete updated[key]
+      return updated
+    })
+  }
 
   // Tax periods
   const updateTaxPeriod = (p) => setTaxPeriods(ps => {
@@ -383,10 +604,39 @@ function Dashboard({ signOut, userEmail } = {}) {
   const editTaxPurchase   = (x) => setTaxPurchases(xs => xs.map(i => i.id === x.id ? x : i))
   const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
 
-  // Variable expenses CRUD
-  const addVariableExpense    = (e) => { setVariableExpenses(es => [e, ...es]); sbWrite('variable_expenses', 'insert', e); toast.success('Gasto registrado', e.description) }
-  const editVariableExpense   = (e) => { setVariableExpenses(es => es.map(x => x.id === e.id ? e : x)); sbWrite('variable_expenses', 'update', e); toast.success('Gasto actualizado') }
-  const deleteVariableExpense = (id) => { setVariableExpenses(es => es.filter(x => x.id !== id)); sbWrite('variable_expenses', 'delete', null, id); toast.success('Gasto eliminado') }
+  // Variable expenses CRUD (+ credit line sync)
+  const addVariableExpense = (e) => {
+    setVariableExpenses(es => [e, ...es])
+    sbWrite('variable_expenses', 'insert', e)
+    if (e.paymentMethod?.type === 'tarjeta' && e.paymentMethod.creditLineId) {
+      updateCreditUsado(e.paymentMethod.creditLineId, e.amount)
+    }
+    toast.success('Gasto registrado', e.description)
+  }
+  const editVariableExpense = (e) => {
+    const old = variableExpenses.find(x => x.id === e.id)
+    setVariableExpenses(es => es.map(x => x.id === e.id ? e : x))
+    sbWrite('variable_expenses', 'update', e)
+    // Sync credit lines: reverse old, apply new
+    const oldCL = old?.paymentMethod?.type === 'tarjeta' ? old.paymentMethod.creditLineId : null
+    const newCL = e.paymentMethod?.type   === 'tarjeta' ? e.paymentMethod.creditLineId   : null
+    if (oldCL === newCL && oldCL) {
+      updateCreditUsado(oldCL, e.amount - (old?.amount ?? 0))
+    } else {
+      if (oldCL) updateCreditUsado(oldCL, -(old?.amount ?? 0))
+      if (newCL) updateCreditUsado(newCL, e.amount)
+    }
+    toast.success('Gasto actualizado')
+  }
+  const deleteVariableExpense = (id) => {
+    const expense = variableExpenses.find(e => e.id === id)
+    setVariableExpenses(es => es.filter(x => x.id !== id))
+    sbWrite('variable_expenses', 'delete', null, id)
+    if (expense?.paymentMethod?.type === 'tarjeta' && expense.paymentMethod.creditLineId) {
+      updateCreditUsado(expense.paymentMethod.creditLineId, -(expense.amount))
+    }
+    toast.success('Gasto eliminado')
+  }
 
   // Quotes CRUD
   const addQuote          = (q) => { setQuotes(qs => [q, ...qs]); sbWrite('quotes', 'insert', q); toast.success('Cotización creada', q.id) }
@@ -505,6 +755,7 @@ function Dashboard({ signOut, userEmail } = {}) {
   const viewProps = {
     data, invoices, settings,
     bills, fixedIncome, cashflow, goals, clients, accounts,
+    variableExpenses, quotes,
     onMarkPaid:   markPaid,
     onNewInvoice: () => setModalOpen(true),
     onGoto:       setView,
@@ -523,11 +774,45 @@ function Dashboard({ signOut, userEmail } = {}) {
     onAddClient: addClient, onEditClient: editClient, onDeleteClient: deleteClient,
     // accounts
     onAddAccount: addAccount, onEditAccount: editAccount, onDeleteAccount: deleteAccount,
+    accountMovements,
+    onAddAccountMovement: addAccountMovement,
+    // credit lines
+    creditLines,
+    onAddCreditLine: addCreditLine, onEditCreditLine: editCreditLine, onDeleteCreditLine: deleteCreditLine,
+    onUpdateCreditUsado: updateCreditUsado,
+    // loans
+    loans, loanPayments,
+    onAddLoan: addLoan, onEditLoan: editLoan, onDeleteLoan: deleteLoan,
+    onRegisterLoanPayment: registerLoanPayment,
+    // monthly checklist
+    monthlyChecks,
+    onToggleMonthlyCheck: toggleMonthlyCheck,
   }
 
   const initials     = getInitials(settings.name)
   const displayName  = settings.name || 'Tu nombre'
   const displayRole  = [settings.role, settings.industry].filter(Boolean).join(' · ') || 'Configura tu perfil →'
+
+  // Sidebar badges — counts for items that need attention
+  const sidebarBadges = useMemo(() => {
+    const now2    = new Date(); now2.setHours(0,0,0,0)
+    const yyyymm  = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,'0')}`
+
+    // Overdue invoices
+    const overdueCount = invoices.filter(i => i.status === 'overdue').length
+
+    // Unpaid payments this month
+    const unpaidPayments = [
+      ...(bills   || []).filter(b => b.active !== false && !monthlyChecks[`bill-${b.id}-${yyyymm}`]?.paid),
+      ...(loans   || []).filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0 && !monthlyChecks[`loan-${l.id}-${yyyymm}`]?.paid),
+      ...(creditLines || []).filter(cl => cl.activa !== false && (cl.usado ?? 0) > 0 && !monthlyChecks[`credit-${cl.id}-${yyyymm}`]?.paid),
+    ].length
+
+    return {
+      invoices: overdueCount,
+      payments: unpaidPayments,
+    }
+  }, [invoices, bills, loans, creditLines, monthlyChecks])
 
   return (
     <div className="app">
@@ -550,6 +835,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         userEmail={userEmail}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        badges={sidebarBadges}
       />
 
       <main className="main">
@@ -618,6 +904,52 @@ function Dashboard({ signOut, userEmail } = {}) {
                   onChangeStatus={changeQuoteStatus}
                   onConvertToInvoice={addInvoiceFromQuote}
                   onGoto={setView}
+                />
+              )}
+              {view === 'accounts'  && (
+                <AccountsView
+                  accounts={accounts}
+                  accountMovements={accountMovements}
+                  onAddAccount={addAccount}
+                  onEditAccount={editAccount}
+                  onDeleteAccount={deleteAccount}
+                  onAddAccountMovement={addAccountMovement}
+                />
+              )}
+              {view === 'payments' && (
+                <PaymentsView
+                  bills={bills}
+                  loans={loans}
+                  creditLines={creditLines}
+                  accounts={accounts}
+                  monthlyChecks={monthlyChecks}
+                  onToggleMonthlyCheck={toggleMonthlyCheck}
+                  onRegisterLoanPayment={registerLoanPayment}
+                  onUpdateCreditUsado={updateCreditUsado}
+                  onAddAccountMovement={addAccountMovement}
+                />
+              )}
+              {view === 'loans' && (
+                <LoansView
+                  loans={loans}
+                  loanPayments={loanPayments}
+                  accounts={accounts}
+                  onAddLoan={addLoan}
+                  onEditLoan={editLoan}
+                  onDeleteLoan={deleteLoan}
+                  onRegisterLoanPayment={registerLoanPayment}
+                />
+              )}
+              {view === 'credit' && (
+                <CreditLinesView
+                  creditLines={creditLines}
+                  accounts={accounts}
+                  variableExpenses={variableExpenses}
+                  onAddCreditLine={addCreditLine}
+                  onEditCreditLine={editCreditLine}
+                  onDeleteCreditLine={deleteCreditLine}
+                  onUpdateCreditUsado={updateCreditUsado}
+                  onAddAccountMovement={addAccountMovement}
                 />
               )}
               {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
@@ -692,6 +1024,8 @@ function Dashboard({ signOut, userEmail } = {}) {
                   onAddVariableExpense={addVariableExpense}
                   onEditVariableExpense={editVariableExpense}
                   onDeleteVariableExpense={deleteVariableExpense}
+                  accounts={accounts}
+                  creditLines={creditLines}
                 />
               )}
               {view === 'ingresos'  && (
@@ -718,6 +1052,15 @@ function Dashboard({ signOut, userEmail } = {}) {
           nextId={nextId}
           settings={settings}
           clients={clients}
+        />
+      )}
+
+      {payModal && (
+        <MarkPaidModal
+          invoice={payModal}
+          accounts={accounts.filter(a => a.activa !== false)}
+          onConfirm={(accountId) => _confirmMarkPaid(payModal, accountId)}
+          onClose={() => setPayModal(null)}
         />
       )}
     </div>

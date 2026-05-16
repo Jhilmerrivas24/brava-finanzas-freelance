@@ -8,6 +8,8 @@ export default function GastosView({
   onAddBill, onEditBill, onDeleteBill,
   variableExpenses = [],
   onAddVariableExpense, onEditVariableExpense, onDeleteVariableExpense,
+  accounts = [],
+  creditLines = [],
 }) {
   const [tab, setTab] = useState('fixed')
 
@@ -79,6 +81,8 @@ export default function GastosView({
           onAdd={onAddVariableExpense}
           onEdit={onEditVariableExpense}
           onDelete={onDeleteVariableExpense}
+          accounts={accounts}
+          creditLines={creditLines}
         />
       )}
     </div>
