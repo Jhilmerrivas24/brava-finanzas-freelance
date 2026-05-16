@@ -82,11 +82,15 @@ function buildPeriods(taxInvoices, taxRH, rentaRate, taxPurchases, bills, variab
   })
 
   // ── Crédito fiscal: gastos fijos activos con hasIGV ──────────────────────
-  // Aplica mensualmente a todos los períodos existentes
+  // Solo aplica al mes actual y futuros — no retroactivo (no sabemos cuándo se creó el gasto)
+  const nowD = new Date()
+  const nowKey = `${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}`
   const billsIGVMonthly = (bills||[])
     .filter(b => b.active !== false && b.hasIGV && b.amount > 0)
     .reduce((s, b) => s + (b.amount - b.amount / 1.18), 0)
-  Object.keys(map).forEach(k => { map[k].igvCredito += billsIGVMonthly })
+  Object.keys(map).forEach(k => {
+    if (k >= nowKey) map[k].igvCredito += billsIGVMonthly
+  })
 
   // ── Crédito fiscal: gastos variables con hasIGV ──────────────────────────
   ;(variableExpenses||[]).forEach(x => {

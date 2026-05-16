@@ -667,9 +667,18 @@ export default function Overview({
     y += 8
 
     const taxRate_    = (settings?.taxRate || 30) / 100
-    const impuestos   = activeData.inThisMonth * taxRate_
-    const billsTotal  = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
     const mon0_       = selMonth - 1
+    // Solo ingresos fiscales (factura + rh) generan reserva de impuestos
+    const fiscalInPDF = (invoices || [])
+      .filter(i => {
+        if (i.status !== 'paid' || !i.issuedDate) return false
+        if (i.docType !== 'factura' && i.docType !== 'rh') return false
+        const d = new Date(i.issuedDate)
+        return d.getFullYear() === selYear && d.getMonth() === mon0_
+      })
+      .reduce((s, i) => s + (i.amount || 0), 0)
+    const impuestos   = fiscalInPDF * taxRate_
+    const billsTotal  = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
     const varDed      = (variableExpenses || []).filter(e => {
       if (!e.deductible || !e.date) return false
       const d = new Date(e.date)

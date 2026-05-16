@@ -494,8 +494,6 @@ export default function LoansView({
   const inactive  = loans.filter(l => l.activo === false)
 
   const totalDeuda     = active.reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
-  const totalOriginal  = loans.filter(l => l.activo !== false).reduce((s, l) => s + (l.montoOriginal ?? 0), 0)
-  const totalPagado    = Math.max(0, totalOriginal - totalDeuda - pagados.reduce((s,l) => s + (l.montoOriginal ?? 0), 0))
   const totalCuota     = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
 
   function handleSave(data) {

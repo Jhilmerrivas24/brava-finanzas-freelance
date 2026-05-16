@@ -251,14 +251,21 @@ function Dashboard({ signOut, userEmail } = {}) {
       .filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isThisMon(i))
       .reduce((s, i) => s + (i.retention || 0), 0)
 
-    // Renta (income tax) target — only fiscal documents (factura + rh), all time
+    // Renta target — only fiscal docs (factura + rh) from current year
     const allFiscalIncome = invoices
-      .filter(i => i.status === 'paid' && (i.docType === 'factura' || i.docType === 'rh'))
+      .filter(i => {
+        if (i.status !== 'paid') return false
+        if (i.docType !== 'factura' && i.docType !== 'rh') return false
+        if (!i.issuedDate) return false
+        return new Date(i.issuedDate).getFullYear() === thisYear
+      })
       .reduce((s, i) => s + (i.amount || 0), 0)
     const taxTarget = allFiscalIncome * ((settings.taxRate || 30) / 100)
 
-    // taxSetAside = confirmed renta payments already registered in TaxesView
-    const taxSetAside = (taxPeriods || []).reduce((s, p) => s + (p.paid || 0), 0)
+    // taxSetAside = confirmed renta payments registered in TaxesView for current year
+    const taxSetAside = (taxPeriods || [])
+      .filter(p => p.id && String(p.id).startsWith(String(thisYear)))
+      .reduce((s, p) => s + (p.paid || 0), 0)
 
     // Hours from quotes this month (unit 'hr' or 'hora')
     const quotesThisMonth = (quotes || []).filter(q => {
@@ -663,7 +670,8 @@ function Dashboard({ signOut, userEmail } = {}) {
     const clientObj  = clients.find(c => c.id === quote.clientId || c.name === quote.clientName)
     const clientColor = clientObj?.color || '#a8a29e'
     const clientRuc   = clientObj?.ruc   || ''
-    const invId       = 'INV-0' + (150 + invoices.filter(i => !SEED_IDS.includes(i.id)).length)
+    const existingNums = invoices.map(i => parseInt((i.id||'').replace(/\D/g,''))||0)
+    const invId       = 'INV-' + String((existingNums.length ? Math.max(...existingNums) : 149) + 1).padStart(4,'0')
 
     const serviceBase = (quote.subtotalServices || 0) + (quote.subtotalEquipment || 0)
     const igvAmt      = quote.applyIGV ? (quote.igvAmount || 0) : 0
@@ -699,7 +707,8 @@ function Dashboard({ signOut, userEmail } = {}) {
     changeQuoteStatus(quote.id, 'invoiced')
   }
 
-  const nextId = 'INV-0' + (150 + invoices.filter(i => !SEED_IDS.includes(i.id)).length)
+  const allNums = invoices.map(i => parseInt((i.id||'').replace(/\D/g,''))||0)
+  const nextId  = 'INV-' + String((allNums.length ? Math.max(...allNums) : 149) + 1).padStart(4,'0')
 
   const createInvoice = (inv) => {
     setInvoices(invs => [inv, ...invs])

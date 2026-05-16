@@ -346,7 +346,7 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
       client: ti.clientName, clientColor: '#a8a29e',
       project: ti.concept, amount: ti.subtotal || ti.amount,
       issued: ti.date, due: '—',
-      status: ti.status === 'cobrada' ? 'paid' : ti.status === 'anulada' ? 'overdue' : 'pending',
+      status: ti.status === 'cobrada' ? 'paid' : ti.status === 'anulada' ? 'cancelled' : 'pending',
       docType: 'factura', margin: null,
     }))
   const taxOnlyRHs = (taxRH||[])
@@ -356,7 +356,7 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
       client: r.clientName, clientColor: '#a8a29e',
       project: r.concept, amount: r.grossAmount || 0,
       issued: r.date, due: '—',
-      status: r.status === 'cobrado' ? 'paid' : r.status === 'anulado' ? 'overdue' : 'pending',
+      status: r.status === 'cobrado' ? 'paid' : r.status === 'anulado' ? 'cancelled' : 'pending',
       docType: 'rh', margin: null,
     }))
   const allInvoices = [...invoices, ...taxOnlyFaturas, ...taxOnlyRHs]

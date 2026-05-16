@@ -1,8 +1,9 @@
 const STATUS_MAP = {
-  paid:    { label: 'Pagada',    cls: 'pill-good' },
-  pending: { label: 'Pendiente', cls: 'pill-warn' },
-  overdue: { label: 'Vencida',   cls: 'pill-bad'  },
-  draft:   { label: 'Borrador',  cls: 'pill-mute' },
+  paid:      { label: 'Pagada',    cls: 'pill-good' },
+  pending:   { label: 'Pendiente', cls: 'pill-warn' },
+  overdue:   { label: 'Vencida',   cls: 'pill-bad'  },
+  draft:     { label: 'Borrador',  cls: 'pill-mute' },
+  cancelled: { label: 'Anulada',   cls: 'pill-mute' },
 }
 
 export default function StatusPill({ status }) {
