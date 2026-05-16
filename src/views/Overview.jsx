@@ -4,8 +4,9 @@ import Bar from '../components/Bar.jsx'
 import Ring from '../components/Ring.jsx'
 import StatusPill from '../components/StatusPill.jsx'
 import CashflowChart from '../components/CashflowChart.jsx'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { fmtPEN } from '../data.js'
+import { loadData, KEYS } from '../lib/storage.js'
 
 const ACCOUNT_TYPES = ['Cuenta corriente', 'Cuenta de ahorros', 'Cuenta negocio', 'Billetera digital', 'Otro']
 
@@ -95,6 +96,153 @@ function EmptyCard({ icon, title, desc, action, onAction }) {
 const NOW = new Date()
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const CURRENT_MONTH = `${MONTHS_ES[NOW.getMonth()]} ${NOW.getFullYear()}`
+
+// ── "Tu sueldo real" breakdown card ───────────────────────────────────────────
+function RealSalaryCard({ data, bills = [], settings = {}, invoices = [] }) {
+  // Read variable expenses from localStorage (self-contained)
+  const variableExpenses = useMemo(() => loadData(KEYS.variableExpenses, []), [])
+
+  const now      = new Date()
+  const thisYear = now.getFullYear()
+  const thisMon  = now.getMonth()
+
+  // Ingresos brutos = facturas pagadas este mes
+  const ingresosBrutos = invoices
+    .filter(i => {
+      if (i.status !== 'paid' || !i.issuedDate) return false
+      const d = new Date(i.issuedDate)
+      return d.getFullYear() === thisYear && d.getMonth() === thisMon
+    })
+    .reduce((s, i) => s + (i.amount || 0), 0)
+
+  // Impuestos apartados = taxRate % de ingresos brutos
+  const taxRate = (settings.taxRate || 30) / 100
+  const impuestos = ingresosBrutos * taxRate
+
+  // Gastos de negocio = bills activos + gastos variables deducibles del mes
+  const billsTotal = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
+  const varDeducible = variableExpenses
+    .filter(e => {
+      if (!e.deductible) return false
+      if (!e.date) return false
+      const d = new Date(e.date)
+      return d.getFullYear() === thisYear && d.getMonth() === thisMon
+    })
+    .reduce((s, e) => s + (e.amount || 0), 0)
+  const gastoNegocio = billsTotal + varDeducible
+
+  // Sueldo real
+  const sueldoReal = ingresosBrutos - impuestos - gastoNegocio
+
+  // Personal expenses = variable expenses NOT deductible this month
+  const gastosPersonales = variableExpenses
+    .filter(e => {
+      if (e.deductible) return false
+      if (!e.date) return false
+      const d = new Date(e.date)
+      return d.getFullYear() === thisYear && d.getMonth() === thisMon
+    })
+    .reduce((s, e) => s + (e.amount || 0), 0)
+
+  // Contextual message
+  let contextMsg = null
+  if (gastosPersonales > 0 && sueldoReal < gastosPersonales) {
+    contextMsg = { icon: '⚠️', text: 'Este mes gastaste más de lo que te quedó', color: 'var(--bad)' }
+  } else if (gastosPersonales > 0 && sueldoReal > gastosPersonales * 1.3) {
+    contextMsg = { icon: '✅', text: 'Buen mes, considera aportar al fondo de emergencia', color: 'var(--good)' }
+  } else if (ingresosBrutos > 0) {
+    const pct = ((sueldoReal / ingresosBrutos) * 100).toFixed(0)
+    contextMsg = { icon: '📊', text: `Tu sueldo real representa el ${pct}% de tus ingresos brutos`, color: 'var(--ink-mute)' }
+  }
+
+  if (ingresosBrutos === 0 && billsTotal === 0) return null
+
+  const cols = [
+    {
+      label:    'Ing. brutos',
+      value:    ingresosBrutos,
+      sub:      'Facturas cobradas',
+      color:    'var(--good)',
+      prefix:   '',
+    },
+    {
+      label:    '− Impuestos',
+      value:    impuestos,
+      sub:      `${(settings.taxRate || 30)}% reserva`,
+      color:    '#ef4444',
+      prefix:   '−',
+    },
+    {
+      label:    '− Gastos negocio',
+      value:    gastoNegocio,
+      sub:      `Fijos + variables deducibles`,
+      color:    '#f97316',
+      prefix:   '−',
+    },
+    {
+      label:    '= Sueldo real',
+      value:    Math.max(sueldoReal, 0),
+      sub:      'Lo que queda para vivir',
+      color:    sueldoReal >= 0 ? '#16a34a' : 'var(--bad)',
+      prefix:   sueldoReal < 0 ? '−' : '',
+      highlight: true,
+    },
+  ]
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card-head" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="card-eyebrow">Este mes · separación negocio / personal</div>
+          <h3 className="card-title">Tu sueldo real</h3>
+        </div>
+      </div>
+
+      {/* 4-column breakdown */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 0,
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        overflow: 'hidden',
+        marginBottom: 12,
+      }}>
+        {cols.map((col, i) => (
+          <div
+            key={col.label}
+            style={{
+              padding: '14px 16px',
+              borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
+              background: col.highlight
+                ? `color-mix(in srgb, ${col.color} 8%, var(--bg-elev))`
+                : 'var(--bg-elev)',
+            }}
+          >
+            <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 6, fontWeight: 500 }}>
+              {col.label}
+            </div>
+            <div
+              className="mono"
+              style={{ fontSize: 17, fontWeight: col.highlight ? 800 : 600, color: col.color }}
+            >
+              {col.prefix}{fmtPEN(Math.abs(col.value), { decimals: 0 })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>{col.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Context message */}
+      {contextMsg && (
+        <div style={{ fontSize: 13, color: contextMsg.color, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>{contextMsg.icon}</span>
+          <span>{contextMsg.text}</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Overview({ data, invoices, bills, goals, accounts, clients, fixedIncome, onMarkPaid, onNewInvoice, onGoto, settings, onAddAccount, onEditAccount, onDeleteAccount }) {
   const [accModal, setAccModal] = useState(null) // null | 'new' | { account }
@@ -186,6 +334,9 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
           </button>
         </div>
       )}
+
+      {/* ── Tu sueldo real ── */}
+      <RealSalaryCard data={data} bills={bills} settings={settings} invoices={invoices} />
 
       <section className="grid-main">
         <div className="card card-chart">

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import Icon from '../components/Icon.jsx'
 import Avatar from '../components/Avatar.jsx'
@@ -125,6 +125,210 @@ function exportToExcel(invoices, settings) {
   XLSX.writeFile(wb, `facturas-${stamp}.xlsx`)
 }
 
+// ── Collection Alerts panel ───────────────────────
+const TODAY = new Date()
+TODAY.setHours(0, 0, 0, 0)
+const IN_7_DAYS = new Date(TODAY)
+IN_7_DAYS.setDate(IN_7_DAYS.getDate() + 7)
+
+function daysDiff(dueDate) {
+  const d = new Date(dueDate)
+  d.setHours(0, 0, 0, 0)
+  return Math.round((d - TODAY) / 86400000)
+}
+
+function whatsappMsg(inv) {
+  const issuedDisplay = inv.issued || 'fecha de emisión'
+  return `Hola ${inv.client}, te recuerdo que la factura por S/ ${(inv.amount || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })} del proyecto "${inv.project || 'sin concepto'}" está pendiente de pago desde ${issuedDisplay}. Quedo atento/a.`
+}
+
+function AlertRow({ inv, onMarkPaid }) {
+  const [copied, setCopied] = useState(false)
+
+  const days  = inv.dueDate ? daysDiff(inv.dueDate) : null
+  const label = days === null
+    ? 'Sin fecha de vencimiento'
+    : days < 0
+    ? `Vencida hace ${-days} día${-days !== 1 ? 's' : ''}`
+    : days === 0
+    ? 'Vence hoy'
+    : `Vence en ${days} día${days !== 1 ? 's' : ''}`
+
+  const labelColor = days === null
+    ? 'var(--ink-mute)'
+    : days <= 0
+    ? 'var(--bad)'
+    : 'var(--warn)'
+
+  function handleCopy() {
+    navigator.clipboard.writeText(whatsappMsg(inv)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    }).catch(() => {
+      // Fallback for environments without clipboard API
+      const ta = document.createElement('textarea')
+      ta.value = whatsappMsg(inv)
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      padding: '8px 0',
+      borderBottom: '1px solid var(--border)',
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="ink-strong">{inv.client}</span>
+          <span className="mono ink-mute" style={{ fontSize: 12 }}>{inv.id}</span>
+          <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>
+            {fmtPEN(inv.amount)}
+          </span>
+          {inv.project && (
+            <span className="ink-mute" style={{ fontSize: 12 }}>· {inv.project}</span>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: labelColor, marginTop: 2, fontWeight: 600 }}>
+          {label}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button
+          className="btn btn-xs"
+          onClick={() => onMarkPaid(inv.id)}
+        >
+          <Icon name="check" size={12}/> Marcar cobrada
+        </button>
+        <button
+          className="btn btn-xs btn-ghost"
+          onClick={handleCopy}
+          title="Copiar mensaje de WhatsApp al portapapeles"
+        >
+          {copied ? '✓ Copiado' : 'Enviar recordatorio'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CollectionAlerts({ invoices, onMarkPaid }) {
+  const [open, setOpen] = useState(true)
+
+  const overdue = useMemo(() => invoices.filter(i =>
+    i.status === 'pending' && i.dueDate && daysDiff(i.dueDate) < 0
+  ), [invoices])
+
+  const dueSoon = useMemo(() => invoices.filter(i =>
+    i.status === 'pending' && i.dueDate && daysDiff(i.dueDate) >= 0 && daysDiff(i.dueDate) <= 7
+  ), [invoices])
+
+  const noDate = useMemo(() => invoices.filter(i =>
+    i.status === 'pending' && !i.dueDate && !i._fromTax
+  ), [invoices])
+
+  const hasAlerts = overdue.length > 0 || dueSoon.length > 0 || noDate.length > 0
+  if (!hasAlerts) return null
+
+  const overdueAmt  = overdue.reduce((s, i) => s + (i.amount || 0), 0)
+  const dueSoonAmt  = dueSoon.reduce((s, i) => s + (i.amount || 0), 0)
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* Overdue banner */}
+      {overdue.length > 0 && (
+        <div style={{
+          background: 'color-mix(in srgb, var(--bad) 8%, var(--bg-elev))',
+          border: '1px solid color-mix(in srgb, var(--bad) 35%, transparent)',
+          borderRadius: 10, marginBottom: 8, overflow: 'hidden',
+        }}>
+          <button
+            onClick={() => setOpen(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🔴</span>
+              <span style={{ fontWeight: 600, color: 'var(--bad)', fontSize: 13 }}>
+                {overdue.length} factura{overdue.length !== 1 ? 's' : ''} vencida{overdue.length !== 1 ? 's' : ''} — {fmtPEN(overdueAmt, { decimals: 0 })} sin cobrar
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+              {open ? 'Ocultar ↑' : 'Ver detalle ↓'}
+            </span>
+          </button>
+          {open && (
+            <div style={{ padding: '0 16px 12px' }}>
+              {overdue.map(inv => (
+                <AlertRow key={inv.id} inv={inv} onMarkPaid={onMarkPaid} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Due soon banner */}
+      {dueSoon.length > 0 && (
+        <div style={{
+          background: 'color-mix(in srgb, var(--warn) 8%, var(--bg-elev))',
+          border: '1px solid color-mix(in srgb, var(--warn) 35%, transparent)',
+          borderRadius: 10, marginBottom: 8, overflow: 'hidden',
+        }}>
+          <button
+            onClick={() => setOpen(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🟡</span>
+              <span style={{ fontWeight: 600, color: 'var(--warn)', fontSize: 13 }}>
+                {dueSoon.length} factura{dueSoon.length !== 1 ? 's' : ''} vence{dueSoon.length !== 1 ? 'n' : ''} en los próximos 7 días — {fmtPEN(dueSoonAmt, { decimals: 0 })}
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+              {open ? 'Ocultar ↑' : 'Ver detalle ↓'}
+            </span>
+          </button>
+          {open && (
+            <div style={{ padding: '0 16px 12px' }}>
+              {dueSoon.map(inv => (
+                <AlertRow key={inv.id} inv={inv} onMarkPaid={onMarkPaid} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No date warning */}
+      {noDate.length > 0 && (
+        <div style={{
+          background: 'var(--bg-elev)',
+          border: '1px solid var(--border)',
+          borderRadius: 10, padding: '10px 16px',
+          display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+          color: 'var(--ink-mute)',
+        }}>
+          <span>📋</span>
+          <span>
+            <strong>{noDate.length} factura{noDate.length !== 1 ? 's' : ''} pendiente{noDate.length !== 1 ? 's' : ''}</strong> no tienen fecha de vencimiento — considera agregarles una para poder recibir alertas.
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────
 export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUndo, onDelete, settings, taxInvoices = [], taxRH = [] }) {
   const [tab, setTab] = useState('all')
@@ -238,6 +442,9 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
         <KpiCard label="Pendiente"      value={fmtPEN(totalPending)} foot={`${invoices.filter(i => i.status === 'pending').length} en plazo`} />
         <KpiCard label="Vencido"        value={fmtPEN(totalOverdue)} foot={`${invoices.filter(i => i.status === 'overdue').length} a cobrar ya`} accent />
       </section>
+
+      {/* ── Payment alerts ── */}
+      <CollectionAlerts invoices={allInvoices} onMarkPaid={onMarkPaid} />
 
       <div className="tabs">
         {tabs.map(t => (

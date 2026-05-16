@@ -8,8 +8,9 @@ const NAV_ITEMS = [
   { id: 'clients',   label: 'Clientes',       icon: 'clients'   },
   { id: 'cashflow',  label: 'Flujo de caja',  icon: 'cashflow'  },
   { id: 'taxes',     label: 'Impuestos',      icon: 'taxes'     },
-  { id: 'goals',     label: 'Metas',          icon: 'goals'     },
   { id: 'gastos',    label: 'Gastos',          icon: 'bills'     },
+  { id: 'budget',    label: 'Presupuesto',    icon: 'filter'    },
+  { id: 'goals',     label: 'Metas',          icon: 'goals'     },
   { id: 'ingresos',  label: 'Ingresos fijos', icon: 'cashflow'  },
   { id: 'consejos',  label: 'Sugerencias',    icon: 'sparkle'   },
 ]

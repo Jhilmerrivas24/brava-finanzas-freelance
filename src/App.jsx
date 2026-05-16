@@ -8,6 +8,7 @@ import CashflowView from './views/CashflowView.jsx'
 import TaxesView from './views/TaxesView.jsx'
 import GoalsView from './views/GoalsView.jsx'
 import GastosView from './views/GastosView.jsx'
+import BudgetView from './views/BudgetView.jsx'
 import IngresosView from './views/IngresosView.jsx'
 import ConsejosView from './views/ConsejosView.jsx'
 import SettingsView from './views/SettingsView.jsx'
@@ -469,6 +470,9 @@ export default function App() {
               variableExpenses={variableExpenses}
             />
           )}
+          {view === 'budget'    && (
+            <BudgetView bills={bills} />
+          )}
           {view === 'goals'     && (
             <GoalsView
               goals={goals}
@@ -479,6 +483,7 @@ export default function App() {
               invoices={invoices}
               accounts={accounts}
               quotes={quotes}
+              bills={bills}
             />
           )}
           {view === 'gastos'    && (

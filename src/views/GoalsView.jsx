@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import Icon from '../components/Icon.jsx'
 import { GOAL_COLORS, fmtPEN } from '../data.js'
+import { loadData, saveData, KEYS } from '../lib/storage.js'
 
 // ── Goal type definitions ──────────────────────────────────────────────────────
 const GOAL_TYPES = [
@@ -104,6 +105,214 @@ function AutoBadge({ typeId }) {
     }}>
       AUTO
     </span>
+  )
+}
+
+// ── Emergency Fund ─────────────────────────────────────────────────────────────
+const EF_STATUS = [
+  { maxMonths: 1,   color: 'var(--bad)',    border: '#ef4444', label: 'Urgente',     icon: '🔴', msg: 'Urgente: construye tu colchón financiero' },
+  { maxMonths: 3,   color: 'var(--warn)',   border: '#f59e0b', label: 'En progreso', icon: '🟡', msg: 'En progreso, sigue aportando' },
+  { maxMonths: 6,   color: 'var(--good)',   border: '#22c55e', label: 'Bien cubierto',icon: '🟢', msg: 'Bien cubierto' },
+  { maxMonths: 999, color: '#3b82f6',       border: '#3b82f6', label: 'Excelente',   icon: '💎', msg: 'Excelente solidez financiera' },
+]
+
+function getEFStatus(months) {
+  return EF_STATUS.find(s => months < s.maxMonths) || EF_STATUS[EF_STATUS.length - 1]
+}
+
+function EmergencyFund({ bills = [] }) {
+  const EF_KEY = KEYS.emergencyFund
+
+  // Persistent state
+  const [ef, setEf] = useState(() => loadData(EF_KEY, { monto: 0, meta: null, updatedAt: null }))
+
+  // Inline edit states
+  const [editingMonto, setEditingMonto] = useState(false)
+  const [editingMeta,  setEditingMeta]  = useState(false)
+  const [montoInput,   setMontoInput]   = useState('')
+  const [metaInput,    setMetaInput]    = useState('')
+
+  // Auto-calculated monthly expenses from active bills
+  const billsMonthly = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
+
+  // Meta: user override or 4 × bills monthly
+  const autoMeta     = billsMonthly * 4
+  const effectiveMeta = (ef.meta != null && ef.meta > 0) ? ef.meta : autoMeta
+
+  const months   = effectiveMeta > 0 ? ef.monto / billsMonthly : 0
+  const pct      = effectiveMeta > 0 ? Math.min(ef.monto / effectiveMeta, 1) : 0
+  const status   = getEFStatus(months)
+
+  function saveMonto(val) {
+    const updated = { ...ef, monto: Number(val) || 0, updatedAt: new Date().toISOString() }
+    setEf(updated)
+    saveData(EF_KEY, updated)
+    setEditingMonto(false)
+  }
+
+  function saveMeta(val) {
+    const updated = { ...ef, meta: Number(val) || 0, updatedAt: new Date().toISOString() }
+    setEf(updated)
+    saveData(EF_KEY, updated)
+    setEditingMeta(false)
+  }
+
+  function resetMeta() {
+    const updated = { ...ef, meta: null }
+    setEf(updated)
+    saveData(EF_KEY, updated)
+    setEditingMeta(false)
+  }
+
+  return (
+    <div
+      className="card"
+      style={{
+        marginBottom: 24,
+        border: `2px solid ${status.border}`,
+        background: `color-mix(in srgb, ${status.border} 5%, var(--bg-elev))`,
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 16 }}>{status.icon}</span>
+            <span className="ink-strong" style={{ fontSize: 16, fontWeight: 700 }}>Fondo de emergencia</span>
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase',
+              background: `color-mix(in srgb, ${status.border} 20%, transparent)`,
+              color: status.color, padding: '2px 7px', borderRadius: 4,
+            }}>
+              {status.label}
+            </span>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{status.msg}</div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-mono)', color: status.color }}>
+            {billsMonthly > 0 ? `${months.toFixed(1)} meses` : '—'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>cubiertos de gastos esenciales</div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+          <span className="ink-mute">Progreso hacia la meta</span>
+          <span className="mono" style={{ color: status.color, fontWeight: 700 }}>
+            {(pct * 100).toFixed(0)}%
+          </span>
+        </div>
+        <div style={{ height: 10, borderRadius: 5, background: 'var(--bg-sunk)', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', width: `${pct * 100}%`,
+            background: status.color, borderRadius: 5, transition: 'width 0.4s ease',
+          }}/>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {/* Current amount (editable) */}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 4 }}>Monto actual del fondo</div>
+          {editingMonto
+            ? <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <div className="amount-input" style={{ width: 140 }}>
+                  <span className="amount-prefix mono" style={{ fontSize: 12 }}>S/</span>
+                  <input
+                    type="number" min="0" step="100"
+                    className="amount-field mono"
+                    value={montoInput}
+                    onChange={e => setMontoInput(e.target.value)}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') saveMonto(montoInput); if (e.key === 'Escape') setEditingMonto(false) }}
+                    style={{ fontSize: 14 }}
+                  />
+                </div>
+                <button className="btn btn-xs btn-primary" onClick={() => saveMonto(montoInput)}>
+                  <Icon name="check" size={12}/>
+                </button>
+                <button className="btn btn-xs btn-ghost" onClick={() => setEditingMonto(false)}>
+                  <Icon name="close" size={12}/>
+                </button>
+              </div>
+            : <button
+                className="btn btn-ghost"
+                onClick={() => { setMontoInput(String(ef.monto)); setEditingMonto(true) }}
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 18, fontWeight: 700, padding: '2px 6px' }}
+              >
+                {fmtPEN(ef.monto, { decimals: 0 })}
+                <span style={{ fontSize: 11, marginLeft: 6, color: 'var(--ink-mute)' }}>editar</span>
+              </button>
+          }
+        </div>
+
+        {/* Target (editable) */}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 4 }}>
+            Meta recomendada (4 meses de gastos fijos)
+          </div>
+          {editingMeta
+            ? <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="amount-input" style={{ width: 140 }}>
+                  <span className="amount-prefix mono" style={{ fontSize: 12 }}>S/</span>
+                  <input
+                    type="number" min="0" step="100"
+                    className="amount-field mono"
+                    value={metaInput}
+                    onChange={e => setMetaInput(e.target.value)}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') saveMeta(metaInput); if (e.key === 'Escape') setEditingMeta(false) }}
+                    style={{ fontSize: 14 }}
+                  />
+                </div>
+                <button className="btn btn-xs btn-primary" onClick={() => saveMeta(metaInput)}>
+                  <Icon name="check" size={12}/>
+                </button>
+                <button className="btn btn-xs btn-ghost" onClick={resetMeta} title="Volver a automático">
+                  Auto
+                </button>
+                <button className="btn btn-xs btn-ghost" onClick={() => setEditingMeta(false)}>
+                  <Icon name="close" size={12}/>
+                </button>
+              </div>
+            : <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="mono" style={{ fontSize: 16, fontWeight: 600 }}>
+                  {fmtPEN(effectiveMeta, { decimals: 0 })}
+                </span>
+                {ef.meta == null && (
+                  <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+                    (auto: {fmtPEN(billsMonthly, { decimals: 0 })} × 4)
+                  </span>
+                )}
+                <button
+                  className="btn btn-xs btn-ghost"
+                  onClick={() => { setMetaInput(String(effectiveMeta)); setEditingMeta(true) }}
+                  style={{ fontSize: 11 }}
+                >
+                  Editar meta
+                </button>
+              </div>
+          }
+        </div>
+
+        {/* Bills reference */}
+        {billsMonthly > 0 && (
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 2 }}>Gastos fijos activos / mes</div>
+            <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>
+              {fmtPEN(billsMonthly, { decimals: 0 })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+              {bills.filter(b => b.active !== false).length} servicios activos
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -374,6 +583,7 @@ export default function GoalsView({
   goals = [],
   onAddGoal, onEditGoal, onDeleteGoal, onAportar,
   invoices = [], accounts = [], quotes = [],
+  bills = [],
 }) {
   const [modal,   setModal]   = useState(null)  // null | 'new' | { goal }
   const [aportar, setAportar] = useState(null)  // null | goal
@@ -420,6 +630,9 @@ export default function GoalsView({
           </button>
         </div>
       </header>
+
+      {/* ── Emergency Fund — always visible, fixed section ── */}
+      <EmergencyFund bills={bills} />
 
       {/* KPI row if manual goals exist */}
       {totalManualTarget > 0 && (

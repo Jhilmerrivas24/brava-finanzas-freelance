@@ -19,6 +19,8 @@ export const KEYS = {
   taxPurchases:     'brava:taxPurchases',
   quotes:           'brava:quotes',
   settings:         'brava:settings',
+  budget:           'brava:budget',
+  emergencyFund:    'brava:emergencyFund',
 }
 
 export function loadData(key, fallback = []) {
