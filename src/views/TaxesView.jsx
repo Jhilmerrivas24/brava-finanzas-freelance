@@ -104,7 +104,7 @@ function buildPeriods(taxInvoices, taxRH, rentaRate, taxPurchases, bills, variab
 
   // ── Neto: max(0, débito − crédito) ───────────────────────────────────────
   Object.values(map).forEach(p => {
-    p.igvOwed = p.igvDebito  // alias backward-compat (raw debito)
+    p.igvOwed = p.igvNeto    // alias: net obligation after crédito fiscal
     p.igvNeto = Math.max(0, p.igvDebito - p.igvCredito)
   })
 

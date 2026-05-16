@@ -427,7 +427,7 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
           {/* Export */}
           <button
             className="btn btn-ghost"
-            onClick={() => exportToExcel(invoices, settings)}
+            onClick={() => exportToExcel(allInvoices, settings)}
             disabled={invoices.length === 0}
             title={invoices.length === 0 ? 'No hay facturas para exportar' : 'Exportar a Excel'}
           >
@@ -443,8 +443,8 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
       <section className="kpi-row">
         <KpiCard label="Total emitido"  value={fmtPEN(totalAll)}     foot={`${invoices.length} facturas`} />
         <KpiCard label="Cobrado"        value={fmtPEN(totalPaid)}    foot={totalAll > 0 ? `${((totalPaid / totalAll) * 100).toFixed(0)}% del total` : '0%'} />
-        <KpiCard label="Pendiente"      value={fmtPEN(totalPending)} foot={`${invoices.filter(i => i.status === 'pending').length} en plazo`} />
-        <KpiCard label="Vencido"        value={fmtPEN(totalOverdue)} foot={`${invoices.filter(i => i.status === 'overdue').length} a cobrar ya`} accent />
+        <KpiCard label="Pendiente"      value={fmtPEN(totalPending)} foot={`${allInvoices.filter(i => i.status === 'pending').length} en plazo`} />
+        <KpiCard label="Vencido"        value={fmtPEN(totalOverdue)} foot={`${allInvoices.filter(i => i.status === 'overdue').length} a cobrar ya`} accent />
       </section>
 
       {/* ── Payment alerts ── */}
@@ -483,10 +483,12 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
                       <td className="mono ink-strong">{inv.id}</td>
                       <td>
                         {inv.docType === 'rh'
-                          ? <span className="pill pill-mute" style={{fontSize:10}}>RH</span>
+                          ? <span className="pill pill-mute"  style={{fontSize:10}}>RH</span>
                           : inv.docType === 'sin_declarar'
-                          ? <span className="pill pill-bad" style={{fontSize:10}}>Sin declarar</span>
-                          : <span className="pill pill-good" style={{fontSize:10}}>Factura</span>
+                          ? <span className="pill pill-bad"   style={{fontSize:10}}>Sin declarar</span>
+                          : inv.docType === 'boleta'
+                          ? <span className="pill pill-mute"  style={{fontSize:10}}>Boleta</span>
+                          : <span className="pill pill-good"  style={{fontSize:10}}>Factura</span>
                         }
                       </td>
                       <td>

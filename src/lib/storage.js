@@ -4,7 +4,9 @@
  * • If a Supabase session is active → read/write from Supabase
  * • If not → fallback to localStorage (offline / pre-auth)
  *
- * Swap the Supabase calls here without touching any component.
+ * NOTE: App.jsx currently uses its own inline sbWrite/loadLS helpers.
+ * This module is available for future refactoring — the KEYS and TABLE
+ * maps are the canonical source of truth for entity → storage mappings.
  */
 
 import { supabase } from './supabase.js'

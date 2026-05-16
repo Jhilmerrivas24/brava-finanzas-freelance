@@ -4,6 +4,7 @@ const STATUS_MAP = {
   overdue:   { label: 'Vencida',   cls: 'pill-bad'  },
   draft:     { label: 'Borrador',  cls: 'pill-mute' },
   cancelled: { label: 'Anulada',   cls: 'pill-mute' },
+  boleta:    { label: 'Boleta',    cls: 'pill-mute' },
 }
 
 export default function StatusPill({ status }) {

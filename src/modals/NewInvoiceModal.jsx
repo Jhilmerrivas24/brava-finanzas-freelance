@@ -5,9 +5,10 @@ import { fmtPEN } from '../data.js'
 const COLORS = ['#c2410c','#15803d','#1d4ed8','#7c3aed','#0f766e','#a16207','#be185d','#0e7490']
 
 const DOC_TYPES = [
-  { value: 'factura',      label: 'Factura',      hint: 'Va a SUNAT' },
-  { value: 'rh',           label: 'RH',           hint: 'Honorarios' },
-  { value: 'sin_declarar', label: 'Sin declarar', hint: 'No a SUNAT' },
+  { value: 'factura',      label: 'Factura',      hint: 'Va a SUNAT'  },
+  { value: 'rh',           label: 'RH',           hint: 'Honorarios'  },
+  { value: 'boleta',       label: 'Boleta',       hint: '100% líquido'},
+  { value: 'sin_declarar', label: 'Sin declarar', hint: 'No a SUNAT'  },
 ]
 
 export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, clients }) {
@@ -108,7 +109,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
           <div>
             <div className="eyebrow">Nuevo comprobante</div>
             <h2 className="modal-title">
-              {docType === 'rh' ? 'RH' : docType === 'sin_declarar' ? 'Servicio' : 'Factura'} {nextId}
+              {docType === 'rh' ? 'RH' : docType === 'sin_declarar' || docType === 'boleta' ? 'Servicio' : 'Factura'} {nextId}
             </h2>
           </div>
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
@@ -138,7 +139,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
           </div>
 
           {/* ── Serie + Número (solo factura / rh) ───────────────────────── */}
-          {docType !== 'sin_declarar' && (
+          {docType !== 'sin_declarar' && docType !== 'boleta' && (
             <div className="field-row">
               <div className="field" style={{ maxWidth: 110 }}>
                 <label>Serie</label>
@@ -169,7 +170,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
                 {(clients || []).map(c => <option key={c.id} value={c.name}/>)}
               </datalist>
             </div>
-            {docType !== 'sin_declarar' && (
+            {docType !== 'sin_declarar' && docType !== 'boleta' && (
               <div className="field" style={{ maxWidth: 160 }}>
                 <label>RUC del cliente</label>
                 <input type="text" maxLength={11} value={clientRuc}
@@ -360,7 +361,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
           {/* ── Preview ──────────────────────────────────────────────────── */}
           <div className="invoice-preview">
             <div className="invoice-preview-head">
-              <div className="ink-mute">Vista previa · {docType === 'rh' ? 'RH' : docType === 'sin_declarar' ? 'Sin declarar' : 'Factura'}</div>
+              <div className="ink-mute">Vista previa · {docType === 'rh' ? 'RH' : docType === 'sin_declarar' || docType === 'boleta' ? 'Sin declarar' : 'Factura'}</div>
               <div className="mono ink-mute">{serie ? `${serie}-` : ''}{number || nextId}</div>
             </div>
             <div className="invoice-preview-body">
@@ -407,13 +408,13 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
                   </div>
                 </>
               )}
-              {docType === 'sin_declarar' && (
+              {(docType === 'sin_declarar' || docType === 'boleta') && (
                 <div className="invoice-preview-row invoice-preview-row-total">
                   <span className="ink-strong">Total</span>
                   <span className="mono ink-strong">{fmtPEN(amtNum)}</span>
                 </div>
               )}
-              {docType !== 'sin_declarar' && (
+              {docType !== 'sin_declarar' && docType !== 'boleta' && (
                 <div className="invoice-preview-row invoice-preview-row-quiet">
                   <span className="ink-mute">Reserva {taxRate}% impuestos</span>
                   {/* RH: reserva sobre neto (bruto − 8% retención); factura: sobre base */}
@@ -436,7 +437,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!canCreate} onClick={handleCreate}>
             <Icon name="check" size={14}/>
-            Crear {docType === 'rh' ? 'RH' : docType === 'sin_declarar' ? 'servicio' : 'factura'}
+            Crear {docType === 'rh' ? 'RH' : docType === 'sin_declarar' || docType === 'boleta' ? 'servicio' : 'factura'}
           </button>
         </div>
       </div>

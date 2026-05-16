@@ -270,7 +270,7 @@ function Dashboard({ signOut, userEmail } = {}) {
 
     // Hours from quotes this month (unit 'hr' or 'hora')
     const quotesThisMonth = (quotes || []).filter(q => {
-      if (!q.date) return true
+      if (!q.date) return false  // exclude quotes with no date — don't inflate any month
       const d = new Date(q.date)
       return d.getMonth() === thisMon && d.getFullYear() === thisYear
     })

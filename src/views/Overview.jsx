@@ -589,7 +589,9 @@ export default function Overview({
   const hoursPct     = activeData.hoursBilled > 0 ? activeData.hoursPaid / activeData.hoursBilled : 0
   const overdue      = (invoices || []).filter(i => i.status === 'overdue')
   const pending      = (invoices || []).filter(i => i.status === 'pending')
-  const avgBurn      = activeData.cashflow.length > 0 ? activeData.cashflow.reduce((s, r) => s + r.exp, 0) / activeData.cashflow.length : 0
+  const avgBurn      = activeData.cashflow.length > 0
+    ? activeData.cashflow.reduce((s, r) => s + r.exp, 0) / activeData.cashflow.length
+    : activeData.outThisMonth  // fallback: use current month expenses if no cashflow data
   const runwayMonths = avgBurn > 0 ? activeData.cashAvailable / avgBurn : 0
   const firstName    = settings?.name ? settings.name.split(' ')[0] : 'aquí'
   const hasInvoices  = (invoices || []).length > 0

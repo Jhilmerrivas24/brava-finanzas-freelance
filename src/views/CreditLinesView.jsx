@@ -28,6 +28,7 @@ function CreditLineModal({ initial, onSave, onClose }) {
     moneda:     initial?.moneda     ?? 'PEN',
     fechaCorte: String(initial?.fechaCorte ?? ''),
     fechaPago:  String(initial?.fechaPago  ?? ''),
+    pagoMinimo: String(initial?.pagoMinimo ?? ''),
     activa:     initial?.activa     ?? true,
   }
   const [form, setForm] = useState(defaults)
@@ -134,6 +135,14 @@ function CreditLineModal({ initial, onSave, onClose }) {
                 onChange={e => set('fechaPago', e.target.value)} placeholder="Ej. 25" />
             </div>
           </div>
+          <div className="field">
+            <label>Pago mínimo mensual <span style={{ fontWeight:400, color:'var(--ink-mute)', fontSize:11 }}>(opcional)</span></label>
+            <div className="amount-input">
+              <span className="amount-prefix mono">{form.moneda === 'USD' ? 'US$' : 'S/'}</span>
+              <input type="text" inputMode="decimal" className="amount-field mono"
+                value={form.pagoMinimo} onChange={e => set('pagoMinimo', e.target.value)} placeholder="0.00"/>
+            </div>
+          </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input type="checkbox" checked={form.activa} onChange={e => set('activa', e.target.checked)} />
@@ -152,6 +161,7 @@ function CreditLineModal({ initial, onSave, onClose }) {
               moneda:     form.moneda,
               fechaCorte: Number(form.fechaCorte) || null,
               fechaPago:  Number(form.fechaPago)  || null,
+              pagoMinimo: Number(form.pagoMinimo) || null,
               activa:     form.activa,
             })}>
             <Icon name="check" size={14}/> {initial ? 'Guardar cambios' : 'Agregar tarjeta'}
