@@ -26,7 +26,6 @@ export default function Icon({ name, size = 16 }) {
     bank:       <><path d="M3 10l9-6 9 6"/><path d="M5 10v8M19 10v8M9 10v8M15 10v8M3 20h18"/></>,
     sparkle:    <><path d="M12 3l1.8 5.5L19 10l-5.2 1.5L12 17l-1.8-5.5L5 10l5.2-1.5z"/><path d="M19 3l.9 2.6L22.5 7l-2.6.9L19 10.5l-.9-2.6L15.5 7l2.6-.9z"/></>,
     trash:      <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></>,
-    clock:      <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
     quote:      <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></>,
     edit:       <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
     card:       <><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M7 15h3M14 15h4"/></>,
