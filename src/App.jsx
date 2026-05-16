@@ -7,7 +7,7 @@ import ClientsView from './views/ClientsView.jsx'
 import CashflowView from './views/CashflowView.jsx'
 import TaxesView from './views/TaxesView.jsx'
 import GoalsView from './views/GoalsView.jsx'
-import BillsView from './views/BillsView.jsx'
+import GastosView from './views/GastosView.jsx'
 import IngresosView from './views/IngresosView.jsx'
 import ConsejosView from './views/ConsejosView.jsx'
 import SettingsView from './views/SettingsView.jsx'
@@ -68,7 +68,8 @@ export default function App() {
   const [taxInvoices, setTaxInvoices] = useState(() => loadLS('brava:taxInvoices', []))
   const [taxRH, setTaxRH] = useState(() => loadLS('brava:taxRH', []))
   const [taxPurchases, setTaxPurchases] = useState(() => loadLS('brava:taxPurchases', []))
-  const [quotes, setQuotes] = useState(() => loadLS('brava:quotes', []))
+  const [quotes, setQuotes]                     = useState(() => loadLS('brava:quotes', []))
+  const [variableExpenses, setVariableExpenses] = useState(() => loadLS('brava:variableExpenses', []))
 
   // ── Computed real data for Overview ────────────────────────────────────────
   const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
@@ -95,11 +96,36 @@ export default function App() {
     }, 0)
 
     const inThisMonth  = invoiceIncomeThisMonth + fixedIncomeMonthly
-    const outThisMonth = bills.reduce((s, b) => s + (b.amount || 0), 0)
+    // Only sum bills that are not explicitly paused / inactive
+    const outThisMonth = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
 
     const allPaidIncome = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0)
     const taxTarget     = allPaidIncome * ((settings.taxRate || 30) / 100)
     const cashAvailable = accounts.reduce((s, a) => s + (a.balance || 0), 0)
+
+    // taxSetAside = confirmed payments registered in tax periods
+    const taxSetAside = (taxPeriods || []).reduce((s, p) => s + (p.paid || 0), 0)
+
+    // Hours from quotes this month (unit 'hr' or 'hora')
+    const quotesThisMonth = (quotes || []).filter(q => {
+      if (!q.date) return true
+      const d = new Date(q.date)
+      return d.getMonth() === thisMon && d.getFullYear() === thisYear
+    })
+    const hoursBilled = quotesThisMonth
+      .filter(q => q.status === 'pending' || q.status === 'accepted')
+      .reduce((s, q) => s + (q.items || []).reduce((si, it) =>
+        si + (/^hr/i.test(it.unit || '') ? (it.qty || 0) : 0), 0), 0)
+    const hoursPaid = quotesThisMonth
+      .filter(q => q.status === 'accepted')
+      .reduce((s, q) => s + (q.items || []).reduce((si, it) =>
+        si + (/^hr/i.test(it.unit || '') ? (it.qty || 0) : 0), 0), 0)
+
+    // Projected income: accepted quotes not yet converted to an invoice
+    const invoicedQuoteIds = new Set(invoices.map(i => i.fromQuoteId).filter(Boolean))
+    const projectedIncome  = (quotes || [])
+      .filter(q => q.status === 'accepted' && !invoicedQuoteIds.has(q.id))
+      .reduce((s, q) => s + (q.total || 0), 0)
 
     const cfData = [...cashflow]
       .sort((a, b) => (a.year - b.year) || (a.month - b.month))
@@ -110,13 +136,14 @@ export default function App() {
       cashAvailable,
       inThisMonth,
       outThisMonth,
-      taxSetAside: 0,
+      taxSetAside,
       taxTarget,
-      hoursBilled: 0,
-      hoursPaid: 0,
+      hoursBilled,
+      hoursPaid,
+      projectedIncome,
       cashflow: cfData,
     }
-  }, [invoices, bills, fixedIncome, cashflow, accounts, settings])
+  }, [invoices, bills, fixedIncome, cashflow, accounts, settings, quotes, taxPeriods])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
@@ -134,7 +161,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('brava:taxInvoices',  JSON.stringify(taxInvoices))  }, [taxInvoices])
   useEffect(() => { localStorage.setItem('brava:taxRH',        JSON.stringify(taxRH))        }, [taxRH])
   useEffect(() => { localStorage.setItem('brava:taxPurchases', JSON.stringify(taxPurchases)) }, [taxPurchases])
-  useEffect(() => { localStorage.setItem('brava:quotes',       JSON.stringify(quotes))       }, [quotes])
+  useEffect(() => { localStorage.setItem('brava:quotes',           JSON.stringify(quotes))           }, [quotes])
+  useEffect(() => { localStorage.setItem('brava:variableExpenses', JSON.stringify(variableExpenses)) }, [variableExpenses])
 
   function handleSaveSettings(newSettings) {
     setSettings(newSettings)
@@ -198,11 +226,65 @@ export default function App() {
   const editTaxPurchase   = (x) => setTaxPurchases(xs => xs.map(i => i.id === x.id ? x : i))
   const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
 
+  // Variable expenses CRUD
+  const addVariableExpense    = (e) => setVariableExpenses(es => [e, ...es])
+  const editVariableExpense   = (e) => setVariableExpenses(es => es.map(x => x.id === e.id ? e : x))
+  const deleteVariableExpense = (id) => setVariableExpenses(es => es.filter(x => x.id !== id))
+
   // Quotes CRUD
   const addQuote          = (q) => setQuotes(qs => [q, ...qs])
   const editQuote         = (q) => setQuotes(qs => qs.map(x => x.id === q.id ? q : x))
   const deleteQuote       = (id) => setQuotes(qs => qs.filter(x => x.id !== id))
   const changeQuoteStatus = (id, status) => setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x))
+
+  // Convert accepted quote → invoice (with tax auto-sync)
+  function addInvoiceFromQuote(quote) {
+    const now        = new Date()
+    const issuedDate = now.toISOString().split('T')[0]
+    const MO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
+    const issued     = `${now.getDate()} ${MO[now.getMonth()]}`
+    const dueD       = new Date(now)
+    dueD.setDate(dueD.getDate() + 14)
+    const due        = `${dueD.getDate()} ${MO[dueD.getMonth()]}`
+
+    const clientObj  = clients.find(c => c.id === quote.clientId || c.name === quote.clientName)
+    const clientColor = clientObj?.color || '#a8a29e'
+    const clientRuc   = clientObj?.ruc   || ''
+    const invId       = 'INV-0' + (150 + invoices.filter(i => !SEED_IDS.includes(i.id)).length)
+
+    const serviceBase = (quote.subtotalServices || 0) + (quote.subtotalEquipment || 0)
+    const igvAmt      = quote.applyIGV ? (quote.igvAmount || 0) : 0
+    const total       = quote.total || 0
+
+    const base = {
+      id: invId,
+      client: quote.clientName, clientId: quote.clientId || undefined,
+      clientColor, clientRuc,
+      project: quote.project,
+      issued, issuedDate, due,
+      status: 'pending',
+      docType: quote.docType || 'factura',
+      fromQuoteId: quote.id,
+      cost: null, margin: null,
+    }
+
+    const inv = quote.docType === 'rh'
+      ? { ...base,
+          amount: total, grossAmount: total,
+          hasRetention: true, retention: total * 0.08,
+          net: total * 0.92, netReceived: total * 0.92,
+        }
+      : { ...base,
+          amount: serviceBase, igv: igvAmt, subtotal: total,
+          hasDetraction: false, detractionPct: 0, detractionAmt: 0,
+          netReceived: total, total,
+        }
+
+    // Reuse createInvoice for tax auto-sync + navigation
+    createInvoice(inv)
+    // Mark quote as invoiced (React 18 batches these)
+    changeQuoteStatus(quote.id, 'invoiced')
+  }
 
   const nextId = 'INV-0' + (150 + invoices.filter(i => !SEED_IDS.includes(i.id)).length)
 
@@ -335,6 +417,8 @@ export default function App() {
               onEditQuote={editQuote}
               onDeleteQuote={deleteQuote}
               onChangeStatus={changeQuoteStatus}
+              onConvertToInvoice={addInvoiceFromQuote}
+              onGoto={setView}
             />
           )}
           {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
@@ -354,6 +438,10 @@ export default function App() {
               onAddCashflow={addCashflow}
               onEditCashflow={editCashflow}
               onDeleteCashflow={deleteCashflow}
+              invoices={invoices}
+              fixedIncome={fixedIncome}
+              bills={bills}
+              variableExpenses={variableExpenses}
             />
           )}
           {view === 'taxes' && (
@@ -377,6 +465,8 @@ export default function App() {
               onAddTaxPurchase={addTaxPurchase}
               onEditTaxPurchase={editTaxPurchase}
               onDeleteTaxPurchase={deleteTaxPurchase}
+              bills={bills}
+              variableExpenses={variableExpenses}
             />
           )}
           {view === 'goals'     && (
@@ -386,14 +476,21 @@ export default function App() {
               onEditGoal={editGoal}
               onDeleteGoal={deleteGoal}
               onAportar={aportar}
+              invoices={invoices}
+              accounts={accounts}
+              quotes={quotes}
             />
           )}
-          {view === 'bills'     && (
-            <BillsView
+          {view === 'gastos'    && (
+            <GastosView
               bills={bills}
               onAddBill={addBill}
               onEditBill={editBill}
               onDeleteBill={deleteBill}
+              variableExpenses={variableExpenses}
+              onAddVariableExpense={addVariableExpense}
+              onEditVariableExpense={editVariableExpense}
+              onDeleteVariableExpense={deleteVariableExpense}
             />
           )}
           {view === 'ingresos'  && (

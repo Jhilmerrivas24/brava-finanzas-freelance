@@ -1,47 +1,210 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Icon from '../components/Icon.jsx'
 import { GOAL_COLORS, fmtPEN } from '../data.js'
 
+// ── Goal type definitions ──────────────────────────────────────────────────────
+const GOAL_TYPES = [
+  {
+    id:    'manual',
+    label: 'Manual',
+    icon:  'edit',
+    desc:  'Tú registras cada aporte de forma manual',
+    unit:  'S/',
+    auto:  false,
+  },
+  {
+    id:    'income_ytd',
+    label: 'Ingresos anuales',
+    icon:  'invoice',
+    desc:  'Suma automática de facturas cobradas este año',
+    unit:  'S/',
+    auto:  true,
+  },
+  {
+    id:    'income_month',
+    label: 'Ingresos del mes',
+    icon:  'invoice',
+    desc:  'Facturas cobradas en el mes actual',
+    unit:  'S/',
+    auto:  true,
+  },
+  {
+    id:    'savings',
+    label: 'Ahorro en cuentas',
+    icon:  'accounts',
+    desc:  'Saldo total de todas tus cuentas registradas',
+    unit:  'S/',
+    auto:  true,
+  },
+  {
+    id:    'hours_ytd',
+    label: 'Horas facturadas',
+    icon:  'clock',
+    desc:  'Horas en cotizaciones aceptadas este año',
+    unit:  'hrs',
+    auto:  true,
+  },
+]
+
+const TYPE_MAP = Object.fromEntries(GOAL_TYPES.map(t => [t.id, t]))
+
+// ── Compute automatic current value ────────────────────────────────────────────
+function computeAuto(goal, invoices = [], accounts = [], quotes = []) {
+  const now      = new Date()
+  const thisYear = now.getFullYear()
+  const thisMon  = now.getMonth()
+
+  switch (goal.type) {
+    case 'income_ytd':
+      return invoices
+        .filter(i => {
+          if (i.status !== 'paid' || !i.issuedDate) return false
+          return new Date(i.issuedDate).getFullYear() === thisYear
+        })
+        .reduce((s, i) => s + (i.amount || 0), 0)
+
+    case 'income_month':
+      return invoices
+        .filter(i => {
+          if (i.status !== 'paid' || !i.issuedDate) return false
+          const d = new Date(i.issuedDate)
+          return d.getFullYear() === thisYear && d.getMonth() === thisMon
+        })
+        .reduce((s, i) => s + (i.amount || 0), 0)
+
+    case 'savings':
+      return accounts.reduce((s, a) => s + (a.balance || 0), 0)
+
+    case 'hours_ytd':
+      return (quotes || [])
+        .filter(q => {
+          if (q.status !== 'accepted' && q.status !== 'invoiced') return false
+          if (!q.date) return true
+          return new Date(q.date).getFullYear() === thisYear
+        })
+        .reduce((s, q) => s + (q.items || []).reduce((si, it) =>
+          si + (/^hr/i.test(it.unit || '') ? (it.qty || 0) : 0), 0), 0)
+
+    default:
+      return null // manual
+  }
+}
+
+// ── Auto type badge ────────────────────────────────────────────────────────────
+function AutoBadge({ typeId }) {
+  const t = TYPE_MAP[typeId]
+  if (!t?.auto) return null
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, letterSpacing: '.04em',
+      textTransform: 'uppercase',
+      background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+      color: 'var(--accent)',
+      padding: '2px 6px', borderRadius: 4,
+    }}>
+      AUTO
+    </span>
+  )
+}
+
+// ── Goal Modal ─────────────────────────────────────────────────────────────────
 function GoalModal({ initial, onSave, onClose }) {
+  const isEdit = !!initial
   const [form, setForm] = useState(initial ?? {
-    name: '', current: '0', target: '', eta: '', color: GOAL_COLORS[0],
+    name: '', type: 'manual', current: '0', target: '', eta: '', color: GOAL_COLORS[0],
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const valid = form.name.trim() && Number(form.target) > 0
+  const selectedType = TYPE_MAP[form.type] || TYPE_MAP.manual
+  const isAuto       = selectedType.auto
+  const isHours      = form.type === 'hours_ytd'
+  const valid        = form.name.trim() && Number(form.target) > 0
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">{initial ? 'Editar' : 'Nueva'} meta</div>
-            <h2 className="modal-title">{form.name || 'Nueva meta de ahorro'}</h2>
+            <div className="eyebrow">{isEdit ? 'Editar' : 'Nueva'} meta</div>
+            <h2 className="modal-title">{form.name || 'Nueva meta'}</h2>
           </div>
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
         </div>
         <div className="modal-body">
+          {/* Name */}
           <div className="field">
             <label>Nombre de la meta</label>
             <input type="text" value={form.name} onChange={e => set('name', e.target.value)}
-              placeholder="Ej. Fondo de emergencia, iMac, Vacaciones…"/>
+              placeholder="Ej. Fondo de emergencia, 200 horas, Ingreso anual…"/>
           </div>
+
+          {/* Type selector */}
+          <div className="field">
+            <label>Tipo de seguimiento</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {GOAL_TYPES.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => set('type', t.id)}
+                  style={{
+                    textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                    border: `1.5px solid ${form.type === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                    background: form.type === t.id
+                      ? 'color-mix(in srgb, var(--accent) 8%, var(--bg-elev))'
+                      : 'var(--bg-elev)',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600, color: form.type === t.id ? 'var(--accent)' : 'var(--ink)' }}>
+                    {t.label}
+                    {t.auto && (
+                      <span style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, letterSpacing: '.05em',
+                        background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                        color: 'var(--accent)', padding: '1px 4px', borderRadius: 3 }}>
+                        AUTO
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }}>{t.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Target + Current (only shown for manual) */}
           <div className="field-row">
             <div className="field">
-              <label>Monto objetivo</label>
-              <input type="number" min="0" step="100" value={form.target}
-                onChange={e => set('target', e.target.value)} placeholder="0"/>
+              <label>{isHours ? 'Horas objetivo' : 'Monto objetivo'}</label>
+              <input type="number" min="0" step={isHours ? 1 : 100} value={form.target}
+                onChange={e => set('target', e.target.value)}
+                placeholder={isHours ? 'Ej. 200' : '0'}/>
             </div>
-            <div className="field">
-              <label>Ahorrado hasta ahora</label>
-              <input type="number" min="0" step="100" value={form.current}
-                onChange={e => set('current', e.target.value)} placeholder="0"/>
-            </div>
+            {!isAuto && (
+              <div className="field">
+                <label>{isHours ? 'Horas acumuladas' : 'Ahorrado hasta ahora'}</label>
+                <input type="number" min="0" step={isHours ? 1 : 100} value={form.current}
+                  onChange={e => set('current', e.target.value)} placeholder="0"/>
+              </div>
+            )}
           </div>
+
+          {isAuto && (
+            <div style={{
+              fontSize: 12, color: 'var(--ink-mute)', background: 'var(--bg-sunk)',
+              borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center',
+            }}>
+              <Icon name="info" size={13}/>
+              El progreso se calcula automáticamente desde tus datos reales. No necesitas ingresar un valor inicial.
+            </div>
+          )}
+
+          {/* ETA */}
           <div className="field">
             <label>Fecha objetivo (opcional)</label>
             <input type="text" value={form.eta} onChange={e => set('eta', e.target.value)}
               placeholder="Ej. Dic 2026"/>
           </div>
+
+          {/* Color */}
           <div className="field">
             <label>Color</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -58,9 +221,12 @@ function GoalModal({ initial, onSave, onClose }) {
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid} onClick={() => onSave({
-            ...form, current: Number(form.current) || 0, target: Number(form.target),
+            ...form,
+            type:    form.type || 'manual',
+            current: isAuto ? 0 : (Number(form.current) || 0),
+            target:  Number(form.target),
           })}>
-            <Icon name="check" size={14}/> {initial ? 'Guardar cambios' : 'Crear meta'}
+            <Icon name="check" size={14}/> {isEdit ? 'Guardar cambios' : 'Crear meta'}
           </button>
         </div>
       </div>
@@ -68,9 +234,10 @@ function GoalModal({ initial, onSave, onClose }) {
   )
 }
 
+// ── Aportar Modal (only for manual goals) ─────────────────────────────────────
 function AportarModal({ goal, onSave, onClose }) {
   const [amount, setAmount] = useState('')
-  const num = Number(amount) || 0
+  const num      = Number(amount) || 0
   const newTotal = goal.current + num
   const overshot = newTotal > goal.target
 
@@ -122,9 +289,104 @@ function AportarModal({ goal, onSave, onClose }) {
   )
 }
 
-export default function GoalsView({ goals, onAddGoal, onEditGoal, onDeleteGoal, onAportar }) {
-  const [modal, setModal] = useState(null)
-  const [aportar, setAportar] = useState(null)
+// ── GoalCard ───────────────────────────────────────────────────────────────────
+function GoalCard({ goal, effectiveCurrent, onEdit, onDelete, onAportar }) {
+  const typeInfo = TYPE_MAP[goal.type || 'manual']
+  const isAuto   = typeInfo?.auto
+  const isHours  = goal.type === 'hours_ytd'
+
+  const current  = effectiveCurrent ?? goal.current ?? 0
+  const p        = goal.target > 0 ? Math.min(current / goal.target, 1) : 0
+  const missing  = goal.target - current
+
+  const fmtCurrent = isHours
+    ? `${current.toFixed(0)} hrs`
+    : fmtPEN(current, { decimals: 0 })
+  const fmtTarget  = isHours
+    ? `${goal.target} hrs`
+    : fmtPEN(goal.target, { decimals: 0 })
+  const fmtMissing = missing > 0
+    ? (isHours ? `${missing.toFixed(0)} hrs` : fmtPEN(missing, { decimals: 0 }))
+    : '¡Logrado!'
+
+  return (
+    <div className="goal-card">
+      <div className="goal-card-head">
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div className="ink-strong" style={{ fontSize: 17 }}>{goal.name}</div>
+            <AutoBadge typeId={goal.type}/>
+          </div>
+          {goal.eta && <div className="ink-mute" style={{ fontSize: 12 }}>Objetivo · {goal.eta}</div>}
+          {isAuto && (
+            <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }}>{typeInfo.desc}</div>
+          )}
+        </div>
+        <div className="goal-pct mono" style={{ color: goal.color }}>{(p * 100).toFixed(0)}%</div>
+      </div>
+      <div className="goal-progress">
+        <div className="goal-progress-track">
+          <div className="goal-progress-fill" style={{ width: `${p * 100}%`, background: goal.color }}/>
+        </div>
+      </div>
+      <div className="goal-card-stats">
+        <div>
+          <div className="lbl">{isHours ? 'Horas' : (isAuto ? 'Actual' : 'Ahorrado')}</div>
+          <div className="num mono ink-strong">{fmtCurrent}</div>
+        </div>
+        <div>
+          <div className="lbl">Meta</div>
+          <div className="num mono">{fmtTarget}</div>
+        </div>
+        <div>
+          <div className="lbl">Falta</div>
+          <div className="num mono ink-mute">{fmtMissing}</div>
+        </div>
+      </div>
+      <div className="goal-card-actions">
+        {!isAuto && (
+          <button className="btn btn-soft btn-xs" onClick={() => onAportar(goal)}>
+            <Icon name="plus" size={12}/> Aportar
+          </button>
+        )}
+        {isAuto && (
+          <span style={{
+            fontSize: 11, color: 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            <Icon name="info" size={11}/> Calculado automáticamente
+          </span>
+        )}
+        <button className="btn btn-xs btn-ghost" onClick={() => onEdit(goal)}>
+          <Icon name="settings" size={12}/> Editar
+        </button>
+        <button className="btn btn-xs btn-quiet" style={{ color: 'var(--bad)', marginLeft: 'auto' }}
+          onClick={() => { if (window.confirm(`¿Eliminar "${goal.name}"?`)) onDelete(goal.id) }}>
+          <Icon name="close" size={12}/>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main view ──────────────────────────────────────────────────────────────────
+export default function GoalsView({
+  goals = [],
+  onAddGoal, onEditGoal, onDeleteGoal, onAportar,
+  invoices = [], accounts = [], quotes = [],
+}) {
+  const [modal,   setModal]   = useState(null)  // null | 'new' | { goal }
+  const [aportar, setAportar] = useState(null)  // null | goal
+
+  // Compute auto current for each goal
+  const autoCurrents = useMemo(() => {
+    const out = {}
+    goals.forEach(g => {
+      const val = computeAuto(g, invoices, accounts, quotes)
+      if (val !== null) out[g.id] = val
+    })
+    return out
+  }, [goals, invoices, accounts, quotes])
 
   function handleSave(data) {
     if (modal === 'new') onAddGoal({ ...data, id: 'g-' + Date.now() })
@@ -132,13 +394,25 @@ export default function GoalsView({ goals, onAddGoal, onEditGoal, onDeleteGoal, 
     setModal(null)
   }
 
+  // Summary KPIs
+  const totalManualProgress = goals
+    .filter(g => !TYPE_MAP[g.type]?.auto)
+    .reduce((s, g) => s + (g.current || 0), 0)
+  const totalManualTarget = goals
+    .filter(g => !TYPE_MAP[g.type]?.auto)
+    .reduce((s, g) => s + (g.target || 0), 0)
+  const completedCount = goals.filter(g => {
+    const cur = autoCurrents[g.id] ?? g.current ?? 0
+    return cur >= g.target
+  }).length
+
   return (
     <div className="view">
       <header className="view-header">
         <div>
-          <div className="eyebrow">{goals.length} metas activas</div>
+          <div className="eyebrow">{goals.length} metas activas · {completedCount} completadas</div>
           <h1>Metas de ahorro</h1>
-          <p className="lede">Cubos separados de tu cuenta corriente — cada factura cobrada puede aportar un porcentaje.</p>
+          <p className="lede">Cubos separados de tu cuenta corriente. Las metas automáticas se actualizan solas con tus datos reales.</p>
         </div>
         <div className="view-header-actions">
           <button className="btn btn-primary" onClick={() => setModal('new')}>
@@ -147,66 +421,47 @@ export default function GoalsView({ goals, onAddGoal, onEditGoal, onDeleteGoal, 
         </div>
       </header>
 
+      {/* KPI row if manual goals exist */}
+      {totalManualTarget > 0 && (
+        <div className="kpi-row" style={{ marginBottom: 16 }}>
+          <div className="kpi-card">
+            <div className="kpi-label">Total ahorrado (manual)</div>
+            <div className="kpi-value mono">{fmtPEN(totalManualProgress, { decimals: 0 })}</div>
+            <div className="kpi-foot ink-mute">de {fmtPEN(totalManualTarget, { decimals: 0 })} objetivo</div>
+          </div>
+        </div>
+      )}
+
       {goals.length === 0
         ? <div className="card">
             <div className="empty-state">
               <div className="empty-state-icon"><Icon name="goals" size={22}/></div>
               <h3>Sin metas de ahorro</h3>
-              <p>Define hacia dónde va tu dinero: emergencias, equipo, vacaciones o lo que quieras.</p>
+              <p>Define hacia dónde va tu dinero: emergencias, equipo, vacaciones o metas de ingresos y horas.</p>
               <button className="btn btn-primary btn-xs" onClick={() => setModal('new')}>+ Crear primera meta</button>
             </div>
           </div>
         : <section className="goals-grid">
-            {goals.map(g => {
-              const p = Math.min(g.current / g.target, 1)
-              const missing = g.target - g.current
-              return (
-                <div key={g.id} className="goal-card">
-                  <div className="goal-card-head">
-                    <div>
-                      <div className="ink-strong" style={{ fontSize: 17 }}>{g.name}</div>
-                      {g.eta && <div className="ink-mute">Objetivo · {g.eta}</div>}
-                    </div>
-                    <div className="goal-pct mono" style={{ color: g.color }}>{(p * 100).toFixed(0)}%</div>
-                  </div>
-                  <div className="goal-progress">
-                    <div className="goal-progress-track">
-                      <div className="goal-progress-fill" style={{ width: `${p * 100}%`, background: g.color }}/>
-                    </div>
-                  </div>
-                  <div className="goal-card-stats">
-                    <div>
-                      <div className="lbl">Ahorrado</div>
-                      <div className="num mono ink-strong">{fmtPEN(g.current, { decimals: 0 })}</div>
-                    </div>
-                    <div>
-                      <div className="lbl">Meta</div>
-                      <div className="num mono">{fmtPEN(g.target, { decimals: 0 })}</div>
-                    </div>
-                    <div>
-                      <div className="lbl">Falta</div>
-                      <div className="num mono ink-mute">{missing > 0 ? fmtPEN(missing, { decimals: 0 }) : '¡Logrado!'}</div>
-                    </div>
-                  </div>
-                  <div className="goal-card-actions">
-                    <button className="btn btn-soft btn-xs" onClick={() => setAportar(g)}>
-                      <Icon name="plus" size={12}/> Aportar
-                    </button>
-                    <button className="btn btn-xs btn-ghost" onClick={() => setModal({ goal: g })}>
-                      <Icon name="settings" size={12}/> Editar
-                    </button>
-                    <button className="btn btn-xs btn-quiet" style={{ color: 'var(--bad)', marginLeft: 'auto' }}
-                      onClick={() => { if (window.confirm(`¿Eliminar "${g.name}"?`)) onDeleteGoal(g.id) }}>
-                      <Icon name="close" size={12}/>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+            {goals.map(g => (
+              <GoalCard
+                key={g.id}
+                goal={g}
+                effectiveCurrent={autoCurrents[g.id]}
+                onEdit={g => setModal({ goal: g })}
+                onDelete={onDeleteGoal}
+                onAportar={setAportar}
+              />
+            ))}
           </section>
       }
 
-      {modal && <GoalModal initial={modal === 'new' ? null : modal.goal} onSave={handleSave} onClose={() => setModal(null)}/>}
+      {modal && (
+        <GoalModal
+          initial={modal === 'new' ? null : modal.goal}
+          onSave={handleSave}
+          onClose={() => setModal(null)}
+        />
+      )}
       {aportar && (
         <AportarModal
           goal={aportar}

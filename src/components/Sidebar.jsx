@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { id: 'cashflow',  label: 'Flujo de caja',  icon: 'cashflow'  },
   { id: 'taxes',     label: 'Impuestos',      icon: 'taxes'     },
   { id: 'goals',     label: 'Metas',          icon: 'goals'     },
-  { id: 'bills',     label: 'Gastos fijos',   icon: 'bills'     },
+  { id: 'gastos',    label: 'Gastos',          icon: 'bills'     },
   { id: 'ingresos',  label: 'Ingresos fijos', icon: 'cashflow'  },
   { id: 'consejos',  label: 'Sugerencias',    icon: 'sparkle'   },
 ]

@@ -21,6 +21,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
   const [serie,          setSerie]          = useState('F001')
   const [number,         setNumber]         = useState('')
   const [clientName,     setClientName]     = useState('')
+  const [clientId,       setClientId]       = useState('')
   const [clientColor,    setClientColor]    = useState(COLORS[0])
   const [clientRuc,      setClientRuc]      = useState('')
   const [project,        setProject]        = useState('')
@@ -63,13 +64,16 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
     if (match) {
       setClientColor(match.color || COLORS[0])
       if (match.ruc) setClientRuc(match.ruc)
+      setClientId(match.id)
+    } else {
+      setClientId('')
     }
   }
 
   function handleCreate() {
     const issuedDate = now.toISOString().split('T')[0]
     const base = {
-      id: nextId, client: clientName, clientColor, clientRuc,
+      id: nextId, client: clientName, clientId: clientId || undefined, clientColor, clientRuc,
       project, issued, issuedDate, due: dueDate,
       status: 'pending', docType,
       serie, number,

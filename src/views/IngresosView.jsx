@@ -118,10 +118,10 @@ export default function IngresosView({ fixedIncome, onAddIncome, onEditIncome, o
     return d.getFullYear() === selYear && (d.getMonth() + 1) === selMonth
   })
 
-  // Group by client
+  // Group by clientId first (stable), fall back to name string
   const byClient = invoiceThisMonth.reduce((acc, inv) => {
-    const key = inv.client || 'Sin cliente'
-    if (!acc[key]) acc[key] = { client: key, color: inv.clientColor || '#a8a29e', total: 0, count: 0 }
+    const key = inv.clientId || inv.client || 'Sin cliente'
+    if (!acc[key]) acc[key] = { client: inv.client || 'Sin cliente', color: inv.clientColor || '#a8a29e', total: 0, count: 0 }
     acc[key].total += inv.amount
     acc[key].count++
     return acc
@@ -129,10 +129,10 @@ export default function IngresosView({ fixedIncome, onAddIncome, onEditIncome, o
   const clientIncomes = Object.values(byClient).sort((a,b) => b.total - a.total)
   const invoiceMonthTotal = clientIncomes.reduce((s,c) => s + c.total, 0)
 
-  // All-time totals per client
+  // All-time totals per client (keyed by clientId for stability)
   const allTimeByClient = invoices.filter(i => i.status === 'paid').reduce((acc, inv) => {
-    const key = inv.client || 'Sin cliente'
-    if (!acc[key]) acc[key] = { client: key, color: inv.clientColor || '#a8a29e', total: 0, count: 0 }
+    const key = inv.clientId || inv.client || 'Sin cliente'
+    if (!acc[key]) acc[key] = { client: inv.client || 'Sin cliente', color: inv.clientColor || '#a8a29e', total: 0, count: 0 }
     acc[key].total += inv.amount
     acc[key].count++
     return acc

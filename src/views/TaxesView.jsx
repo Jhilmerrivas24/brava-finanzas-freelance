@@ -46,17 +46,26 @@ function defaultDueDate(key, paymentDay) {
 }
 
 // ── Build monthly periods from data ───────────────────────────────────────────
-function buildPeriods(taxInvoices, taxRH, rentaRate) {
+// taxPurchases, bills (hasIGV), variableExpenses (hasIGV) feed the crédito fiscal
+function buildPeriods(taxInvoices, taxRH, rentaRate, taxPurchases, bills, variableExpenses) {
   const map = {}
   const ensure = (k) => {
-    if (!map[k]) map[k] = { key:k, invCount:0, invBase:0, igvOwed:0, rentaOwed:0, rhCount:0, rhGross:0, rhRetention:0 }
+    if (!map[k]) map[k] = {
+      key: k, invCount: 0, invBase: 0,
+      igvDebito: 0,   // IGV deuda a SUNAT (de facturas emitidas)
+      igvCredito: 0,  // IGV crédito fiscal (compras + gastos con IGV)
+      rentaOwed: 0,
+      rhCount: 0, rhGross: 0, rhRetention: 0,
+    }
   }
+
+  // ── Débito fiscal: facturas emitidas ─────────────────────────────────────
   ;(taxInvoices||[]).forEach(x => {
     const k = parseMonthKey(x.date); if (!k) return; ensure(k)
     map[k].invCount++
-    map[k].invBase   += x.amount   || 0
-    map[k].igvOwed   += x.igv      || 0
-    map[k].rentaOwed += (x.amount||0) * ((rentaRate||0)/100)
+    map[k].invBase    += x.amount   || 0
+    map[k].igvDebito  += x.igv      || 0
+    map[k].rentaOwed  += (x.amount||0) * ((rentaRate||0)/100)
   })
   ;(taxRH||[]).forEach(x => {
     const k = parseMonthKey(x.date); if (!k) return; ensure(k)
@@ -64,7 +73,36 @@ function buildPeriods(taxInvoices, taxRH, rentaRate) {
     map[k].rhGross     += x.grossAmount || 0
     map[k].rhRetention += x.retention   || 0
   })
-  return Object.values(map).sort((a,b) => b.key.localeCompare(a.key))
+
+  // ── Crédito fiscal: compras con IGV (taxPurchases) ───────────────────────
+  ;(taxPurchases||[]).forEach(x => {
+    const k = parseMonthKey(x.date); if (!k || !map[k]) return
+    map[k].igvCredito += x.igv || 0
+  })
+
+  // ── Crédito fiscal: gastos fijos activos con hasIGV ──────────────────────
+  // Aplica mensualmente a todos los períodos existentes
+  const billsIGVMonthly = (bills||[])
+    .filter(b => b.active !== false && b.hasIGV && b.amount > 0)
+    .reduce((s, b) => s + (b.amount - b.amount / 1.18), 0)
+  Object.keys(map).forEach(k => { map[k].igvCredito += billsIGVMonthly })
+
+  // ── Crédito fiscal: gastos variables con hasIGV ──────────────────────────
+  ;(variableExpenses||[]).forEach(x => {
+    if (!x.hasIGV || !x.date || x.amount <= 0) return
+    const d  = new Date(x.date)
+    const k  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    if (!map[k]) return
+    map[k].igvCredito += x.amount - x.amount / 1.18
+  })
+
+  // ── Neto: max(0, débito − crédito) ───────────────────────────────────────
+  Object.values(map).forEach(p => {
+    p.igvOwed = p.igvDebito  // alias backward-compat (raw debito)
+    p.igvNeto = Math.max(0, p.igvDebito - p.igvCredito)
+  })
+
+  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key))
 }
 
 function groupQuarterly(monthly) {
@@ -73,14 +111,24 @@ function groupQuarterly(monthly) {
     const [y, mo] = m.key.split('-')
     const q    = Math.ceil(parseInt(mo)/3)
     const key  = `${y}-Q${q}`
-    if (!map[key]) map[key] = { key, invCount:0, invBase:0, igvOwed:0, rentaOwed:0, rhCount:0, rhGross:0, rhRetention:0 }
+    if (!map[key]) map[key] = {
+      key, invCount: 0, invBase: 0,
+      igvDebito: 0, igvCredito: 0,
+      igvOwed: 0, igvNeto: 0,
+      rentaOwed: 0, rhCount: 0, rhGross: 0, rhRetention: 0,
+    }
     const r = map[key]
-    r.invCount   += m.invCount; r.invBase    += m.invBase
-    r.igvOwed    += m.igvOwed;  r.rentaOwed  += m.rentaOwed
-    r.rhCount    += m.rhCount;  r.rhGross    += m.rhGross
-    r.rhRetention+= m.rhRetention
+    r.invCount    += m.invCount;   r.invBase     += m.invBase
+    r.igvDebito   += m.igvDebito;  r.igvCredito  += m.igvCredito
+    r.rentaOwed   += m.rentaOwed
+    r.rhCount     += m.rhCount;    r.rhGross     += m.rhGross
+    r.rhRetention += m.rhRetention
   })
-  return Object.values(map).sort((a,b) => b.key.localeCompare(a.key))
+  Object.values(map).forEach(p => {
+    p.igvOwed = p.igvDebito
+    p.igvNeto = Math.max(0, p.igvDebito - p.igvCredito)
+  })
+  return Object.values(map).sort((a, b) => b.key.localeCompare(a.key))
 }
 
 // ── Shared modal shell ────────────────────────────────────────────────────────
@@ -167,7 +215,8 @@ function PeriodModal({ period, computed, onSave, onClose }) {
   const [dueDate, setDueDate] = useState(period.dueDate || '')
   const [paid,    setPaid]    = useState(String(period.paid    ?? ''))
   const [status,  setStatus]  = useState(period.status || 'pending')
-  const totalTax = (computed.igvOwed||0) + (computed.rentaOwed||0)
+  // Use igvNeto (after credit fiscal) for total obligation
+  const totalTax = (computed.igvNeto ?? computed.igvOwed ?? 0) + (computed.rentaOwed||0) + (computed.rhRetention||0)
 
   return (
     <Modal eyebrow="Editar período" title={period.label} onClose={onClose}
@@ -184,11 +233,13 @@ function PeriodModal({ period, computed, onSave, onClose }) {
         {[
           ['Facturas emitidas', computed.invCount + ' factura(s)'],
           ['Base imponible', fmtPEN(computed.invBase||0,{decimals:0})],
-          ['IGV a pagar', fmtPEN(computed.igvOwed||0,{decimals:0})],
+          ['IGV débito (facturas)', fmtPEN(computed.igvDebito||computed.igvOwed||0,{decimals:0})],
+          computed.igvCredito > 0 && ['IGV crédito fiscal', '− ' + fmtPEN(computed.igvCredito,{decimals:0})],
+          computed.igvCredito > 0 && ['IGV neto a pagar', fmtPEN(computed.igvNeto||0,{decimals:0})],
           ['Pago a cuenta Renta', fmtPEN(computed.rentaOwed||0,{decimals:0})],
           ['Retención RH', fmtPEN(computed.rhRetention||0,{decimals:0})],
           ['Total obligaciones', fmtPEN(totalTax,{decimals:0})],
-        ].map(([l,v]) => (
+        ].filter(Boolean).map(([l,v]) => (
           <div key={l} style={{display:'flex',justifyContent:'space-between'}}>
             <span className="ink-mute">{l}</span><span className="mono ink-strong">{v}</span>
           </div>
@@ -493,6 +544,7 @@ export default function TaxesView({
   taxInvoices, onAddTaxInvoice, onEditTaxInvoice, onDeleteTaxInvoice,
   taxRH, onAddTaxRH, onEditTaxRH, onDeleteTaxRH,
   taxPurchases, onAddTaxPurchase, onEditTaxPurchase, onDeleteTaxPurchase,
+  bills = [], variableExpenses = [],
 }) {
   const [tab, setTab]           = useState('resumen')
   const [periodView, setPeriodView] = useState('monthly') // 'monthly' | 'quarterly'
@@ -527,8 +579,11 @@ export default function TaxesView({
     return [...(taxRH||[]), ...fromMain]
   }, [taxRH, invoices])
 
-  // Auto-generate monthly periods (use merged arrays for accurate totals)
-  const rawMonthly  = useMemo(() => buildPeriods(allFaturas, allRHs, rentaRate), [allFaturas, allRHs, rentaRate])
+  // Auto-generate monthly periods (use merged arrays + credit fiscal sources)
+  const rawMonthly   = useMemo(
+    () => buildPeriods(allFaturas, allRHs, rentaRate, taxPurchases, bills, variableExpenses),
+    [allFaturas, allRHs, rentaRate, taxPurchases, bills, variableExpenses]
+  )
   const rawQuarterly = useMemo(() => groupQuarterly(rawMonthly), [rawMonthly])
 
   // Merge with stored period data
@@ -547,10 +602,16 @@ export default function TaxesView({
   const periods = (periodView==='monthly' ? rawMonthly : rawQuarterly).map(mergePeriod)
 
   // Totals (use merged arrays)
-  const totalIGV   = allFaturas.reduce((s,x)=>s+(x.igv||0),0)
-  const totalRenta = allFaturas.reduce((s,x)=>s+(x.amount||0)*(rentaRate/100),0)
-  const totalPaidSunat = periods.reduce((s,p)=>s+(p.paid||0),0)
-  const ringPct    = (totalIGV+totalRenta) > 0 ? Math.min(totalPaidSunat/(totalIGV+totalRenta),1) : 0
+  const totalIGVDebito  = allFaturas.reduce((s,x)=>s+(x.igv||0),0)
+  const totalIGVCredito = periods.reduce((s,p)=>s+(p.igvCredito||0),0)
+  const totalIGVNeto    = periods.reduce((s,p)=>s+(p.igvNeto||0),0)
+  const totalIGV        = totalIGVDebito  // alias for backward compat display
+  const totalRenta      = allFaturas.reduce((s,x)=>s+(x.amount||0)*(rentaRate/100),0)
+  const totalPaidSunat  = periods.reduce((s,p)=>s+(p.paid||0),0)
+  // Ring uses NET obligations (after credit)
+  const ringPct = (totalIGVNeto+totalRenta) > 0
+    ? Math.min(totalPaidSunat/(totalIGVNeto+totalRenta), 1)
+    : 0
 
   const TABS = [
     { id:'resumen',  label:'Resumen' },
@@ -596,7 +657,7 @@ export default function TaxesView({
                 <Ring value={ringPct} size={200} stroke={16}/>
                 <div className="tax-big-center">
                   <div className="mono" style={{fontSize:18,fontWeight:700}}>{fmtPEN(totalPaidSunat)}</div>
-                  <div className="ink-mute" style={{fontSize:12}}>de {fmtPEN(totalIGV+totalRenta)}</div>
+                  <div className="ink-mute" style={{fontSize:12}}>de {fmtPEN(totalIGVNeto+totalRenta)}</div>
                   <div className={`pill ${ringPct>=1?'pill-good':totalPaidSunat>0?'pill-warn':'pill-mute'}`} style={{marginTop:8}}>
                     {(ringPct*100).toFixed(0)}% pagado
                   </div>
@@ -615,13 +676,14 @@ export default function TaxesView({
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {[
                   ['Facturas emitidas (base)', allFaturas.reduce((s,x)=>s+(x.amount||0),0), 'ink-strong'],
-                  ['IGV total', totalIGV, 'ink-strong'],
+                  ['IGV débito (facturas)', totalIGVDebito, 'ink-strong'],
+                  ['IGV crédito fiscal', totalIGVCredito, 'ink-good'],
+                  ['IGV neto a pagar', totalIGVNeto, 'ink-strong'],
                   ['Pago a cta. Renta', totalRenta, 'ink-strong'],
                   ['Detracciones', allFaturas.reduce((s,x)=>s+(x.detractionAmt||0),0), 'ink-warn'],
                   ['RHs neto cobrado', allRHs.reduce((s,x)=>s+(x.net||0),0), null],
                   ['Retenciones RH', allRHs.reduce((s,x)=>s+(x.retention||0),0), 'ink-warn'],
                   ['Compras (total)', (taxPurchases||[]).reduce((s,x)=>s+(x.total||x.amount||0),0), null],
-                  ['IGV en compras', (taxPurchases||[]).reduce((s,x)=>s+(x.igv||0),0), 'ink-good'],
                 ].map(([l,v,cls])=>(
                   <div key={l} style={{display:'flex',justifyContent:'space-between',fontSize:13,paddingBottom:6,borderBottom:'1px solid var(--border)'}}>
                     <span className="ink-mute">{l}</span>
@@ -672,9 +734,11 @@ export default function TaxesView({
                     <tr>
                       <th>Período</th>
                       <th>Vencimiento</th>
-                      <th className="num-col">Facturas</th>
+                      <th className="num-col">Facts.</th>
                       <th className="num-col">Base</th>
-                      <th className="num-col">IGV ({taxRate>0?18:0}%)</th>
+                      <th className="num-col">IGV débito</th>
+                      <th className="num-col">Crédito fiscal</th>
+                      <th className="num-col">IGV neto</th>
                       <th className="num-col">Renta ({rentaRate}%)</th>
                       <th className="num-col">Ret. RH</th>
                       <th className="num-col">Total oblig.</th>
@@ -684,7 +748,7 @@ export default function TaxesView({
                   </thead>
                   <tbody>
                     {periods.map(p => {
-                      const totalObl = (p.igvOwed||0) + (p.rentaOwed||0) + (p.rhRetention||0)
+                      const totalObl = (p.igvNeto||0) + (p.rentaOwed||0) + (p.rhRetention||0)
                       const diff     = totalObl - (p.paid||0)
                       return (
                         <tr key={p.key} style={{cursor:'pointer'}} onClick={()=>setEditPeriod(p)}>
@@ -692,7 +756,9 @@ export default function TaxesView({
                           <td className="mono ink-mute">{p.dueDate || '—'}</td>
                           <td className="num-col mono">{p.invCount>0?p.invCount:'—'}</td>
                           <td className="num-col mono">{p.invBase>0?fmtPEN(p.invBase,{decimals:0}):'—'}</td>
-                          <td className="num-col mono ink-strong">{p.igvOwed>0?fmtPEN(p.igvOwed,{decimals:0}):'—'}</td>
+                          <td className="num-col mono ink-mute">{p.igvDebito>0?fmtPEN(p.igvDebito,{decimals:0}):'—'}</td>
+                          <td className="num-col mono ink-good">{p.igvCredito>0?`− ${fmtPEN(p.igvCredito,{decimals:0})}`:'—'}</td>
+                          <td className="num-col mono ink-strong">{p.igvNeto>0?fmtPEN(p.igvNeto,{decimals:0}):'—'}</td>
                           <td className="num-col mono ink-strong">{p.rentaOwed>0?fmtPEN(p.rentaOwed,{decimals:0}):'—'}</td>
                           <td className="num-col mono ink-mute">{p.rhRetention>0?fmtPEN(p.rhRetention,{decimals:0}):'—'}</td>
                           <td className="num-col mono" style={{fontWeight:700}}>{totalObl>0?fmtPEN(totalObl,{decimals:0}):'—'}</td>
@@ -712,10 +778,12 @@ export default function TaxesView({
                       <td className="ink-strong" colSpan={2}>Total</td>
                       <td className="num-col mono">{periods.reduce((s,p)=>s+p.invCount,0)}</td>
                       <td className="num-col mono">{fmtPEN(periods.reduce((s,p)=>s+(p.invBase||0),0),{decimals:0})}</td>
-                      <td className="num-col mono ink-strong">{fmtPEN(periods.reduce((s,p)=>s+(p.igvOwed||0),0),{decimals:0})}</td>
+                      <td className="num-col mono">{fmtPEN(periods.reduce((s,p)=>s+(p.igvDebito||0),0),{decimals:0})}</td>
+                      <td className="num-col mono ink-good">{fmtPEN(periods.reduce((s,p)=>s+(p.igvCredito||0),0),{decimals:0})}</td>
+                      <td className="num-col mono ink-strong">{fmtPEN(periods.reduce((s,p)=>s+(p.igvNeto||0),0),{decimals:0})}</td>
                       <td className="num-col mono ink-strong">{fmtPEN(periods.reduce((s,p)=>s+(p.rentaOwed||0),0),{decimals:0})}</td>
                       <td className="num-col mono">{fmtPEN(periods.reduce((s,p)=>s+(p.rhRetention||0),0),{decimals:0})}</td>
-                      <td className="num-col mono" style={{fontWeight:700}}>{fmtPEN(periods.reduce((s,p)=>s+(p.igvOwed||0)+(p.rentaOwed||0)+(p.rhRetention||0),0),{decimals:0})}</td>
+                      <td className="num-col mono" style={{fontWeight:700}}>{fmtPEN(periods.reduce((s,p)=>s+(p.igvNeto||0)+(p.rentaOwed||0)+(p.rhRetention||0),0),{decimals:0})}</td>
                       <td className="num-col mono">{fmtPEN(periods.reduce((s,p)=>s+(p.paid||0),0),{decimals:0})}</td>
                       <td></td>
                     </tr>

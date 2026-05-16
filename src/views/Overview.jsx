@@ -148,7 +148,11 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
         <KpiCard
           label="Ingresos del mes"
           value={fmtPEN(data.inThisMonth)}
-          foot={`${invoices.filter(i => i.status === 'paid').length} facturas cobradas`}
+          foot={
+            data.projectedIncome > 0
+              ? `${invoices.filter(i => i.status === 'paid').length} cobradas · +${fmtPEN(data.projectedIncome, { decimals: 0 })} proyectado`
+              : `${invoices.filter(i => i.status === 'paid').length} facturas cobradas`
+          }
         />
         <KpiCard
           label="Egresos del mes"
@@ -162,6 +166,26 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
           deltaPositive={net >= 0}
         />
       </section>
+
+      {/* Projected income notice — cotizaciones aceptadas sin factura */}
+      {data.projectedIncome > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'color-mix(in srgb, var(--accent) 10%, var(--bg-elev))',
+          border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+          borderRadius: 10, padding: '10px 16px', marginBottom: 20, fontSize: 13,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Icon name="invoice" size={15} />
+            <span>
+              <strong>{fmtPEN(data.projectedIncome, { decimals: 0 })}</strong> en cotizaciones aceptadas pendientes de facturar
+            </span>
+          </div>
+          <button className="btn btn-ghost btn-xs" onClick={() => onGoto('quotes')}>
+            Ver cotizaciones <Icon name="arrowRight" size={11} />
+          </button>
+        </div>
+      )}
 
       <section className="grid-main">
         <div className="card card-chart">

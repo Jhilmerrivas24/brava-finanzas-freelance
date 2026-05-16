@@ -691,11 +691,12 @@ function RangePanel({ quotes }) {
 }
 
 // ── Main view ─────────────────────────────────────
-export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDeleteQuote, onChangeStatus, clients = [], settings }) {
+export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDeleteQuote, onChangeStatus, onConvertToInvoice, onGoto, clients = [], settings }) {
   const [mode, setMode]                 = useState('list')   // 'list' | 'new' | 'edit'
   const [editingQuote, setEditingQuote] = useState(null)
   const [selectedId, setSelectedId]     = useState(null)
   const [showConfig, setShowConfig]     = useState(false)
+  const [converting, setConverting]     = useState(false)
 
   const selectedQuote = useMemo(() => quotes.find(q => q.id === selectedId), [quotes, selectedId])
 
@@ -718,6 +719,14 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
   function handleCancel() {
     setMode('list')
     setEditingQuote(null)
+  }
+
+  function handleConvert(q) {
+    if (!window.confirm(
+      `¿Convertir la cotización ${q.id} en factura?\n\nSe creará una factura pendiente de cobro y la cotización quedará marcada como "Facturada".`
+    )) return
+    onConvertToInvoice(q)
+    // onConvertToInvoice navigates to invoices automatically via App.jsx
   }
 
   // KPIs
@@ -826,17 +835,38 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
               <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                   <div>
-                    <div className="mono ink-mute" style={{ fontSize: 11, marginBottom: 4 }}>{selectedQuote.id}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div className="mono ink-mute" style={{ fontSize: 11 }}>{selectedQuote.id}</div>
+                      <QuoteStatusBadge status={selectedQuote.status} />
+                    </div>
                     <div style={{ fontWeight: 700, fontSize: 18 }}>{selectedQuote.clientName}</div>
                     <div className="ink-mute">{selectedQuote.project}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-ghost" onClick={() => exportQuotePDF(selectedQuote)}>
                       <Icon name="download" size={14} /> Exportar PDF
                     </button>
-                    <button className="btn btn-primary" onClick={() => handleEdit(selectedQuote)}>
+                    <button className="btn btn-ghost" onClick={() => handleEdit(selectedQuote)}>
                       Editar
                     </button>
+                    {selectedQuote.status === 'accepted' && onConvertToInvoice && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => handleConvert(selectedQuote)}
+                        title="Crear una factura pendiente a partir de esta cotización"
+                      >
+                        <Icon name="invoice" size={14} /> Convertir a factura
+                      </button>
+                    )}
+                    {selectedQuote.status === 'invoiced' && (
+                      <button
+                        className="btn btn-soft"
+                        onClick={() => onGoto?.('invoices')}
+                        style={{ color: 'var(--good)' }}
+                      >
+                        <Icon name="check" size={13} /> Ver factura generada
+                      </button>
+                    )}
                   </div>
                 </div>
 

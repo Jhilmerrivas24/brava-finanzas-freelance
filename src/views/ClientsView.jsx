@@ -82,7 +82,7 @@ function ClientModal({ initial, onSave, onClose }) {
 
 function HistoryModal({ client, invoices, onClose, onMarkPaid }) {
   const clientInvoices = invoices.filter(i =>
-    i.client === client.name || i.client === client.id
+    i.clientId === client.id || i.client === client.name
   ).sort((a, b) => b.id?.localeCompare(a.id))
 
   const total = clientInvoices.reduce((s, i) => s + i.amount, 0)
@@ -163,7 +163,7 @@ export default function ClientsView({ clients, invoices, onAddClient, onEditClie
 
   const activeClients = (clients || []).filter(c => c.active)
   const totalYTD = (clients || []).reduce((s, c) => {
-    return s + invoices.filter(i => i.client === c.name || i.client === c.id)
+    return s + invoices.filter(i => i.clientId === c.id || i.client === c.name)
                        .reduce((a, i) => a + i.amount, 0)
   }, 0)
 
@@ -206,7 +206,7 @@ export default function ClientsView({ clients, invoices, onAddClient, onEditClie
           </div>
         : <section className="client-grid">
             {(clients || []).map(c => {
-              const clientInvoices = invoices.filter(i => i.client === c.name || i.client === c.id)
+              const clientInvoices = invoices.filter(i => i.clientId === c.id || i.client === c.name)
               const ytd  = clientInvoices.reduce((s, i) => s + i.amount, 0)
               const owed = clientInvoices.filter(i => i.status !== 'paid').reduce((s, i) => s + i.amount, 0)
               const lastInv = clientInvoices[clientInvoices.length - 1]
