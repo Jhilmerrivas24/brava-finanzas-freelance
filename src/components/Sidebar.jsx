@@ -15,9 +15,9 @@ const NAV_ITEMS = [
   { id: 'consejos',  label: 'Sugerencias',    icon: 'sparkle'   },
 ]
 
-export default function Sidebar({ view, setView, initials, displayName, displayRole, onSignOut, userEmail }) {
+export default function Sidebar({ view, setView, initials, displayName, displayRole, onSignOut, userEmail, isOpen, onClose }) {
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${isOpen ? ' sidebar-is-open' : ''}`}>
       <div className="sidebar-brand">
         <div className="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="22" height="22">

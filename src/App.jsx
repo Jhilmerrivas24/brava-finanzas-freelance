@@ -91,6 +91,7 @@ function AuthGate() {
 function Dashboard({ signOut, userEmail } = {}) {
   const [dark, setDark] = useState(loadDark)
   const [view, setView] = useState('overview')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [invoices, setInvoices] = useState(() => loadLS('brava:invoices', []))
   const [settings, setSettings] = useState(loadSettings)
@@ -486,18 +487,41 @@ function Dashboard({ signOut, userEmail } = {}) {
 
   return (
     <div className="app">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       <Sidebar
         view={view}
-        setView={setView}
+        setView={(v) => { setView(v); setSidebarOpen(false) }}
         initials={initials}
         displayName={displayName}
         displayRole={displayRole}
         onSignOut={signOut}
         userEmail={userEmail}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <main className="main">
         <div className="topbar">
+          {/* Hamburger — only visible on mobile */}
+          <button
+            className="hamburger-btn"
+            onClick={() => setSidebarOpen(o => !o)}
+            aria-label="Abrir menú"
+          >
+            <span /><span /><span />
+          </button>
+
+          {/* Mobile brand name (replaces search on narrow screens) */}
+          <span className="topbar-brand-mobile">Brava</span>
+
           <div className="topbar-search">
             <Icon name="search" size={14} />
             <input type="text" placeholder="Buscar facturas, clientes, transacciones…" />
