@@ -179,8 +179,18 @@ function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variab
     })
     .reduce((s, i) => s + (i.amount || 0), 0)
 
+  // Solo factura + RH generan obligación fiscal — sin_declarar y boleta son 100% líquidos
+  const ingresosFiscales = invoices
+    .filter(i => {
+      if (i.status !== 'paid' || !i.issuedDate) return false
+      if (i.docType !== 'factura' && i.docType !== 'rh') return false
+      const d = new Date(i.issuedDate)
+      return d.getFullYear() === thisYear && d.getMonth() === thisMon
+    })
+    .reduce((s, i) => s + (i.amount || 0), 0)
+
   const taxRate      = (settings.taxRate || 30) / 100
-  const impuestos    = ingresosBrutos * taxRate
+  const impuestos    = ingresosFiscales * taxRate
   const billsTotal   = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
   const varDeducible = variableExpenses
     .filter(e => {
@@ -213,8 +223,8 @@ function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variab
   if (ingresosBrutos === 0 && billsTotal === 0) return null
 
   const cols = [
-    { label:'Ing. brutos',      value:ingresosBrutos,              sub:'Facturas cobradas', color:'var(--good)', prefix:'' },
-    { label:'− Impuestos',      value:impuestos,                   sub:`${settings.taxRate||30}% reserva`, color:'#ef4444', prefix:'−' },
+    { label:'Ing. brutos',      value:ingresosBrutos,              sub:'Ingresos cobrados', color:'var(--good)', prefix:'' },
+    { label:'− Impuestos',      value:impuestos,                   sub: ingresosFiscales > 0 ? `${settings.taxRate||30}% sobre fiscal` : 'Sin obligación fiscal', color:'#ef4444', prefix:'−' },
     { label:'− Gastos negocio', value:gastoNegocio,                sub:'Fijos + deducibles', color:'#f97316', prefix:'−' },
     { label:'= Sueldo real',    value:Math.max(sueldoReal, 0),     sub:'Lo que queda para vivir',
       color: sueldoReal >= 0 ? '#16a34a' : 'var(--bad)', prefix: sueldoReal < 0 ? '−' : '', highlight:true },
