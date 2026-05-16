@@ -4,6 +4,7 @@ import { progressTransition } from '../lib/animations.js'
 import Icon from '../components/Icon.jsx'
 import { fmtPEN } from '../data.js'
 import { loadData, saveData, KEYS } from '../lib/storage.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const BUDGET_KEY = KEYS.budget  // 'brava:budget'
@@ -80,6 +81,7 @@ function statusColor(pct) {
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 export default function BudgetView({ bills = [] }) {
+  const dialog = useDialog()
   const now = new Date()
   const [selYear,  setSelYear]  = useState(now.getFullYear())
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1)
@@ -134,7 +136,7 @@ export default function BudgetView({ bills = [] }) {
     const prevKey = prevMonthKey(selYear, selMonth)
     const prev = allBudgets[prevKey]
     if (!prev || Object.keys(prev).length === 0) {
-      alert('No hay presupuesto guardado para el mes anterior.')
+      dialog.alert({ type: 'info', title: 'Sin datos', message: 'No hay presupuesto guardado para el mes anterior.' })
       return
     }
     const updated = { ...allBudgets, [monthKey]: { ...prev } }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useDialog } from '../hooks/useDialog.js'
 import * as XLSX from 'xlsx'
 import Icon from '../components/Icon.jsx'
 import Avatar from '../components/Avatar.jsx'
@@ -331,6 +332,7 @@ function CollectionAlerts({ invoices, onMarkPaid }) {
 
 // ── Main view ─────────────────────────────────────
 export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUndo, onDelete, settings, taxInvoices = [], taxRH = [] }) {
+  const dialog = useDialog()
   const [tab, setTab] = useState('all')
   const [showFilter, setShowFilter] = useState(false)
   const [filters, setFilters] = useState({ client: '', minAmount: '', maxAmount: '' })
@@ -519,7 +521,7 @@ export default function InvoicesView({ invoices, onMarkPaid, onNewInvoice, onUnd
                               <button
                                 className="btn btn-xs btn-quiet"
                                 style={{ color: 'var(--bad)' }}
-                                onClick={() => { if (window.confirm(`¿Eliminar ${inv.id}?`)) onDelete(inv.id) }}
+                                onClick={() => dialog.danger({ itemName: inv.id, title: '¿Eliminar?' }).then(ok => ok && onDelete(inv.id))}
                                 title="Eliminar"
                               >
                                 <Icon name="close" size={12} />

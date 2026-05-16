@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const FREQUENCIES = [
   { value: 'monthly',    label: 'Mensual'   },
@@ -102,6 +103,7 @@ function IncomeModal({ initial, onSave, onClose }) {
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export default function IngresosView({ fixedIncome, onAddIncome, onEditIncome, onDeleteIncome, invoices = [], clients = [] }) {
+  const dialog = useDialog()
   const [modal, setModal] = useState(null)
 
   const now = new Date()
@@ -336,7 +338,7 @@ export default function IngresosView({ fixedIncome, onAddIncome, onEditIncome, o
                           <button
                             className="btn btn-xs btn-quiet"
                             style={{ color: 'var(--bad)' }}
-                            onClick={() => { if (window.confirm(`¿Eliminar "${inc.name}"?`)) onDeleteIncome(inc.id) }}
+                            onClick={() => dialog.danger({ itemName: inc.name, title: '¿Eliminar?' }).then(ok => ok && onDeleteIncome(inc.id))}
                           >
                             <Icon name="close" size={12}/>
                           </button>

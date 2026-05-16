@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { loadEmisor, saveEmisor, DEFAULT_EMISOR } from '../../services/emisorService.js'
 import Icon from '../Icon.jsx'
+import { useDialog } from '../../hooks/useDialog.js'
 
 // ── Colores del header del PDF ──────────────────────
 // Verde teal corporativo (ajustado al branding de cotizaciones)
@@ -63,6 +64,7 @@ function HeaderPreview({ emisor }) {
 
 // ── Componente principal ───────────────────────────
 export default function ConfigEmisor({ onClose }) {
+  const dialog = useDialog()
   // Cargamos desde el service; los cambios locales son el "borrador"
   const [form, setForm]       = useState(() => loadEmisor())
   const [saved, setSaved]     = useState(false)
@@ -82,8 +84,9 @@ export default function ConfigEmisor({ onClose }) {
     setTimeout(() => setSaved(false), 2500)
   }
 
-  function handleReset() {
-    if (!window.confirm('¿Restaurar los valores por defecto?')) return
+  async function handleReset() {
+    const ok = await dialog.confirm({ title: '¿Restaurar valores?', message: '¿Restaurar los valores por defecto?', confirmText: 'Restaurar' })
+    if (!ok) return
     setForm({ ...DEFAULT_EMISOR })
     setSaved(false)
     setDirty(true)

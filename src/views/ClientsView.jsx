@@ -3,6 +3,7 @@ import Icon from '../components/Icon.jsx'
 import Avatar from '../components/Avatar.jsx'
 import Bar from '../components/Bar.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const CLIENT_TYPES = [
   'Retainer mensual',
@@ -158,6 +159,7 @@ function HistoryModal({ client, invoices, onClose, onMarkPaid }) {
 }
 
 export default function ClientsView({ clients, invoices, onAddClient, onEditClient, onDeleteClient, onNewInvoice }) {
+  const dialog = useDialog()
   const [modal, setModal]     = useState(null) // null | 'new' | { client }
   const [history, setHistory] = useState(null) // client object
 
@@ -263,7 +265,7 @@ export default function ClientsView({ clients, invoices, onAddClient, onEditClie
                     <button
                       className="btn btn-xs btn-quiet"
                       style={{ color: 'var(--bad)', marginLeft: 'auto' }}
-                      onClick={() => { if (window.confirm(`¿Eliminar "${c.name}"?`)) onDeleteClient(c.id) }}
+                      onClick={() => dialog.danger({ itemName: c.name, title: '¿Eliminar?' }).then(ok => ok && onDeleteClient(c.id))}
                     >
                       <Icon name="close" size={12}/>
                     </button>

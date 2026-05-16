@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const CATEGORIES = ['Software','Espacio','Servicios','Salud','Transporte','Marketing','Educación','Otro']
 
@@ -102,6 +103,7 @@ function BillModal({ initial, onSave, onClose }) {
 
 // ── Panel (usado dentro de GastosView) ────────────────────────────────────────
 export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill }) {
+  const dialog = useDialog()
   const [modal, setModal] = useState(null)
 
   const activeBills = (bills || []).filter(b => b.active !== false)
@@ -147,7 +149,7 @@ export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill }
           <Icon name="settings" size={12}/>
         </button>
         <button className="btn btn-xs btn-quiet" style={{ color:'var(--bad)' }}
-          onClick={() => { if (window.confirm(`¿Eliminar "${b.name}"?`)) onDeleteBill(b.id) }}>
+          onClick={() => dialog.danger({ itemName: b.name, title: '¿Eliminar?' }).then(ok => ok && onDeleteBill(b.id))}>
           <Icon name="close" size={12}/>
         </button>
       </td>

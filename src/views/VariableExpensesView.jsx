@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const CATEGORIES = [
   'Software','Servicios','Transporte','Alimentación',
@@ -112,6 +113,7 @@ function ExpenseModal({ initial, onSave, onClose }) {
 
 // ── Panel ──────────────────────────────────────────────────────────────────────
 export default function VariableExpensesView({ expenses = [], onAdd, onEdit, onDelete }) {
+  const dialog = useDialog()
   const [modal, setModal] = useState(null)
   const now = new Date()
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -231,7 +233,7 @@ export default function VariableExpensesView({ expenses = [], onAdd, onEdit, onD
                         <Icon name="settings" size={12}/>
                       </button>
                       <button className="btn btn-xs btn-quiet" style={{ color:'var(--bad)' }}
-                        onClick={() => { if (window.confirm(`¿Eliminar "${e.description}"?`)) onDelete(e.id) }}>
+                        onClick={() => dialog.danger({ itemName: e.description, title: '¿Eliminar?' }).then(ok => ok && onDelete(e.id))}>
                         <Icon name="close" size={12}/>
                       </button>
                     </td>

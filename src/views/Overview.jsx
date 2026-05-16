@@ -5,6 +5,7 @@ import Ring from '../components/Ring.jsx'
 import StatusPill from '../components/StatusPill.jsx'
 import CashflowChart from '../components/CashflowChart.jsx'
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useDialog } from '../hooks/useDialog.js'
 import { motion } from 'framer-motion'
 import { staggerContainer, staggerItem, hoverLift, tapScale } from '../lib/animations.js'
 import { fmtPEN } from '../data.js'
@@ -281,6 +282,7 @@ function RealSalaryCard({ data, bills = [], settings = {}, invoices = [] }) {
 }
 
 export default function Overview({ data, invoices, bills, goals, accounts, clients, fixedIncome, onMarkPaid, onNewInvoice, onGoto, settings, onAddAccount, onEditAccount, onDeleteAccount }) {
+  const dialog = useDialog()
   const [accModal, setAccModal] = useState(null) // null | 'new' | { account }
 
   function handleAccSave(data) {
@@ -535,7 +537,7 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
                       <button
                         className="btn btn-xs btn-quiet"
                         style={{ color: 'var(--bad)', padding: '2px 4px' }}
-                        onClick={e => { e.stopPropagation(); if (window.confirm(`¿Eliminar "${a.bank}"?`)) onDeleteAccount(a.id) }}
+                        onClick={e => { e.stopPropagation(); dialog.danger({ itemName: a.bank, title: '¿Eliminar?' }).then(ok => ok && onDeleteAccount(a.id)) }}
                       >
                         <Icon name="close" size={10}/>
                       </button>

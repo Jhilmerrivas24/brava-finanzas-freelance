@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { viewTransition } from './lib/animations.js'
+import { useToast } from './hooks/useToast.js'
 import Sidebar from './components/Sidebar.jsx'
 import Icon from './components/Icon.jsx'
 import Overview from './views/Overview.jsx'
@@ -91,6 +92,7 @@ function AuthGate() {
 }
 
 function Dashboard({ signOut, userEmail } = {}) {
+  const toast = useToast()
   const [dark, setDark] = useState(loadDark)
   const [view, setView] = useState('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -278,54 +280,59 @@ function Dashboard({ signOut, userEmail } = {}) {
     setSettings(newSettings)
     localStorage.setItem('brava:settings', JSON.stringify(newSettings))
     setView('overview')
+    toast.success('Configuración guardada ✓')
   }
 
   const markPaid = (id) => {
     setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid' } : i))
     sbWrite('invoices', 'update', { id, status: 'paid' }, id)
+    toast.success('Factura cobrada', 'El estado se actualizó a pagado ✓')
   }
   const markUndo = (id) => {
     setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'pending' } : i))
     sbWrite('invoices', 'update', { id, status: 'pending' }, id)
+    toast.info('Estado revertido', 'La factura volvió a pendiente')
   }
   const deleteInv = (id) => {
     setInvoices(invs => invs.filter(i => i.id !== id))
     sbWrite('invoices', 'delete', null, id)
+    toast.success('Factura eliminada')
   }
 
   // Bills CRUD
-  const addBill    = (b) => { setBills(bs => [...bs, b]); sbWrite('bills', 'insert', b) }
-  const editBill   = (b) => { setBills(bs => bs.map(x => x.id === b.id ? b : x)); sbWrite('bills', 'update', b) }
-  const deleteBill = (id) => { setBills(bs => bs.filter(x => x.id !== id)); sbWrite('bills', 'delete', null, id) }
+  const addBill    = (b) => { setBills(bs => [...bs, b]); sbWrite('bills', 'insert', b); toast.success('Gasto fijo registrado', b.name) }
+  const editBill   = (b) => { setBills(bs => bs.map(x => x.id === b.id ? b : x)); sbWrite('bills', 'update', b); toast.success('Gasto actualizado', b.name) }
+  const deleteBill = (id) => { setBills(bs => bs.filter(x => x.id !== id)); sbWrite('bills', 'delete', null, id); toast.success('Gasto eliminado') }
 
   // Fixed income CRUD
-  const addIncome    = (inc) => { setFixedIncome(list => [...list, inc]); sbWrite('fixed_income', 'insert', inc) }
-  const editIncome   = (inc) => { setFixedIncome(list => list.map(x => x.id === inc.id ? inc : x)); sbWrite('fixed_income', 'update', inc) }
-  const deleteIncome = (id)  => { setFixedIncome(list => list.filter(x => x.id !== id)); sbWrite('fixed_income', 'delete', null, id) }
+  const addIncome    = (inc) => { setFixedIncome(list => [...list, inc]); sbWrite('fixed_income', 'insert', inc); toast.success('Ingreso fijo registrado', inc.name) }
+  const editIncome   = (inc) => { setFixedIncome(list => list.map(x => x.id === inc.id ? inc : x)); sbWrite('fixed_income', 'update', inc); toast.success('Ingreso actualizado', inc.name) }
+  const deleteIncome = (id)  => { setFixedIncome(list => list.filter(x => x.id !== id)); sbWrite('fixed_income', 'delete', null, id); toast.success('Ingreso eliminado') }
 
   // Cashflow CRUD
-  const addCashflow    = (cf) => { setCashflow(list => [...list, cf]); sbWrite('cashflow', 'insert', cf) }
-  const editCashflow   = (cf) => { setCashflow(list => list.map(x => x.id === cf.id ? cf : x)); sbWrite('cashflow', 'update', cf) }
-  const deleteCashflow = (id) => { setCashflow(list => list.filter(x => x.id !== id)); sbWrite('cashflow', 'delete', null, id) }
+  const addCashflow    = (cf) => { setCashflow(list => [...list, cf]); sbWrite('cashflow', 'insert', cf); toast.success('Mes registrado en flujo de caja') }
+  const editCashflow   = (cf) => { setCashflow(list => list.map(x => x.id === cf.id ? cf : x)); sbWrite('cashflow', 'update', cf); toast.success('Flujo de caja actualizado') }
+  const deleteCashflow = (id) => { setCashflow(list => list.filter(x => x.id !== id)); sbWrite('cashflow', 'delete', null, id); toast.success('Mes eliminado del flujo') }
 
   // Goals CRUD
-  const addGoal    = (g)  => { setGoals(gs => [...gs, g]); sbWrite('goals', 'insert', g) }
-  const editGoal   = (g)  => { setGoals(gs => gs.map(x => x.id === g.id ? g : x)); sbWrite('goals', 'update', g) }
-  const deleteGoal = (id) => { setGoals(gs => gs.filter(x => x.id !== id)); sbWrite('goals', 'delete', null, id) }
+  const addGoal    = (g)  => { setGoals(gs => [...gs, g]); sbWrite('goals', 'insert', g); toast.success('Meta creada', g.name) }
+  const editGoal   = (g)  => { setGoals(gs => gs.map(x => x.id === g.id ? g : x)); sbWrite('goals', 'update', g); toast.success('Meta actualizada', g.name) }
+  const deleteGoal = (id) => { setGoals(gs => gs.filter(x => x.id !== id)); sbWrite('goals', 'delete', null, id); toast.success('Meta eliminada') }
   const aportar    = (id, newCurrent) => {
     setGoals(gs => gs.map(x => x.id === id ? { ...x, current: newCurrent } : x))
     sbWrite('goals', 'update', { id, current: newCurrent })
+    toast.success('Aporte registrado ✓')
   }
 
   // Clients CRUD
-  const addClient    = (c) => { setClients(cs => [...cs, c]); sbWrite('clients', 'insert', c) }
-  const editClient   = (c) => { setClients(cs => cs.map(x => x.id === c.id ? c : x)); sbWrite('clients', 'update', c) }
-  const deleteClient = (id) => { setClients(cs => cs.filter(x => x.id !== id)); sbWrite('clients', 'delete', null, id) }
+  const addClient    = (c) => { setClients(cs => [...cs, c]); sbWrite('clients', 'insert', c); toast.success('Cliente guardado', c.name) }
+  const editClient   = (c) => { setClients(cs => cs.map(x => x.id === c.id ? c : x)); sbWrite('clients', 'update', c); toast.success('Cliente actualizado', c.name) }
+  const deleteClient = (id) => { setClients(cs => cs.filter(x => x.id !== id)); sbWrite('clients', 'delete', null, id); toast.success('Cliente eliminado') }
 
   // Accounts CRUD
-  const addAccount    = (a) => setAccounts(as => [...as, a])
-  const editAccount   = (a) => setAccounts(as => as.map(x => x.id === a.id ? a : x))
-  const deleteAccount = (id) => setAccounts(as => as.filter(x => x.id !== id))
+  const addAccount    = (a) => { setAccounts(as => [...as, a]); toast.success('Cuenta agregada', a.bank) }
+  const editAccount   = (a) => { setAccounts(as => as.map(x => x.id === a.id ? a : x)); toast.success('Cuenta actualizada') }
+  const deleteAccount = (id) => { setAccounts(as => as.filter(x => x.id !== id)); toast.success('Cuenta eliminada') }
 
   // Tax periods
   const updateTaxPeriod = (p) => setTaxPeriods(ps => {
@@ -349,15 +356,21 @@ function Dashboard({ signOut, userEmail } = {}) {
   const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
 
   // Variable expenses CRUD
-  const addVariableExpense    = (e) => { setVariableExpenses(es => [e, ...es]); sbWrite('variable_expenses', 'insert', e) }
-  const editVariableExpense   = (e) => { setVariableExpenses(es => es.map(x => x.id === e.id ? e : x)); sbWrite('variable_expenses', 'update', e) }
-  const deleteVariableExpense = (id) => { setVariableExpenses(es => es.filter(x => x.id !== id)); sbWrite('variable_expenses', 'delete', null, id) }
+  const addVariableExpense    = (e) => { setVariableExpenses(es => [e, ...es]); sbWrite('variable_expenses', 'insert', e); toast.success('Gasto registrado', e.description) }
+  const editVariableExpense   = (e) => { setVariableExpenses(es => es.map(x => x.id === e.id ? e : x)); sbWrite('variable_expenses', 'update', e); toast.success('Gasto actualizado') }
+  const deleteVariableExpense = (id) => { setVariableExpenses(es => es.filter(x => x.id !== id)); sbWrite('variable_expenses', 'delete', null, id); toast.success('Gasto eliminado') }
 
   // Quotes CRUD
-  const addQuote          = (q) => { setQuotes(qs => [q, ...qs]); sbWrite('quotes', 'insert', q) }
-  const editQuote         = (q) => { setQuotes(qs => qs.map(x => x.id === q.id ? q : x)); sbWrite('quotes', 'update', q) }
-  const deleteQuote       = (id) => { setQuotes(qs => qs.filter(x => x.id !== id)); sbWrite('quotes', 'delete', null, id) }
-  const changeQuoteStatus = (id, status) => { setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x)); sbWrite('quotes', 'update', { id, status }) }
+  const addQuote          = (q) => { setQuotes(qs => [q, ...qs]); sbWrite('quotes', 'insert', q); toast.success('Cotización creada', q.id) }
+  const editQuote         = (q) => { setQuotes(qs => qs.map(x => x.id === q.id ? q : x)); sbWrite('quotes', 'update', q); toast.success('Cotización actualizada') }
+  const deleteQuote       = (id) => { setQuotes(qs => qs.filter(x => x.id !== id)); sbWrite('quotes', 'delete', null, id); toast.success('Cotización eliminada') }
+  const changeQuoteStatus = (id, status) => {
+    setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x))
+    sbWrite('quotes', 'update', { id, status })
+    if (status === 'accepted') toast.success('Cotización aceptada ✓')
+    else if (status === 'rejected') toast.warning('Cotización rechazada')
+    else if (status === 'invoiced') toast.success('Convertida a factura ✓')
+  }
 
   // Convert accepted quote → invoice (with tax auto-sync)
   function addInvoiceFromQuote(quote) {
@@ -458,6 +471,7 @@ function Dashboard({ signOut, userEmail } = {}) {
 
     setModalOpen(false)
     setView('invoices')
+    toast.success('Factura creada', inv.id ? `${inv.id} · ${inv.client}` : inv.client)
   }
 
   const viewProps = {
@@ -504,7 +518,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         initials={initials}
         displayName={displayName}
         displayRole={displayRole}
-        onSignOut={signOut}
+        onSignOut={() => { toast.info('Sesión cerrada'); signOut() }}
         userEmail={userEmail}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}

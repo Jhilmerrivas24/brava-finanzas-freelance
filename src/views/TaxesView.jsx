@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import Icon from '../components/Icon.jsx'
 import Ring from '../components/Ring.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const YEAR = new Date().getFullYear()
 const CURRENT_Q = Math.floor(new Date().getMonth() / 3)
@@ -546,6 +547,7 @@ export default function TaxesView({
   taxPurchases, onAddTaxPurchase, onEditTaxPurchase, onDeleteTaxPurchase,
   bills = [], variableExpenses = [],
 }) {
+  const dialog = useDialog()
   const [tab, setTab]           = useState('resumen')
   const [periodView, setPeriodView] = useState('monthly') // 'monthly' | 'quarterly'
   const [settingsModal, setSettingsModal] = useState(false)
@@ -834,9 +836,11 @@ export default function TaxesView({
                           <td className="row-actions" style={{display:'flex',gap:4,justifyContent:'flex-end'}}>
                             <button className="btn btn-xs btn-ghost" onClick={()=>setInvModal({inv})}><Icon name="settings" size={12}/> Editar</button>
                             <button className="btn btn-xs btn-quiet" style={{color:'var(--bad)'}} onClick={()=>{
-                              if(!window.confirm(`¿Eliminar ${inv.serie||''}-${inv.number||inv.id}?`)) return
-                              if(inv._fromMain) { onDeleteInvoice?.(inv.id) }
-                              else onDeleteTaxInvoice(inv.id)
+                              dialog.danger({ itemName: `${inv.serie||''}-${inv.number||inv.id}`, title: '¿Eliminar?' }).then(ok => {
+                                if(!ok) return
+                                if(inv._fromMain) { onDeleteInvoice?.(inv.id) }
+                                else onDeleteTaxInvoice(inv.id)
+                              })
                             }}><Icon name="close" size={12}/></button>
                           </td>
                         </tr>
@@ -883,9 +887,11 @@ export default function TaxesView({
                           <td className="row-actions" style={{display:'flex',gap:4,justifyContent:'flex-end'}}>
                             <button className="btn btn-xs btn-ghost" onClick={()=>setRhModal({rh})}><Icon name="settings" size={12}/> Editar</button>
                             <button className="btn btn-xs btn-quiet" style={{color:'var(--bad)'}} onClick={()=>{
-                              if(!window.confirm(`¿Eliminar RH?`)) return
-                              if(rh._fromMain) { onDeleteInvoice?.(rh.id) }
-                              else onDeleteTaxRH(rh.id)
+                              dialog.danger({ itemName: 'RH', title: '¿Eliminar?' }).then(ok => {
+                                if(!ok) return
+                                if(rh._fromMain) { onDeleteInvoice?.(rh.id) }
+                                else onDeleteTaxRH(rh.id)
+                              })
                             }}><Icon name="close" size={12}/></button>
                           </td>
                         </tr>
@@ -928,7 +934,7 @@ export default function TaxesView({
                           <td className="num-col mono ink-strong">{fmtPEN(p.total||p.amount)}</td>
                           <td className="row-actions" style={{display:'flex',gap:4,justifyContent:'flex-end'}}>
                             <button className="btn btn-xs btn-ghost" onClick={()=>setPurModal({p})}><Icon name="settings" size={12}/> Editar</button>
-                            <button className="btn btn-xs btn-quiet" style={{color:'var(--bad)'}} onClick={()=>{if(window.confirm('¿Eliminar compra?'))onDeleteTaxPurchase(p.id)}}><Icon name="close" size={12}/></button>
+                            <button className="btn btn-xs btn-quiet" style={{color:'var(--bad)'}} onClick={()=>{ dialog.danger({ itemName: 'compra', title: '¿Eliminar?' }).then(ok => ok && onDeleteTaxPurchase(p.id)) }}><Icon name="close" size={12}/></button>
                           </td>
                         </tr>
                       ))}

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import Icon from '../components/Icon.jsx'
 import CashflowChart from '../components/CashflowChart.jsx'
 import { fmtPEN } from '../data.js'
+import { useDialog } from '../hooks/useDialog.js'
 
 const MONTHS       = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
@@ -179,6 +180,7 @@ export default function CashflowView({
   cashflow, onAddCashflow, onEditCashflow, onDeleteCashflow,
   invoices = [], fixedIncome = [], bills = [], variableExpenses = [],
 }) {
+  const dialog = useDialog()
   const [modal, setModal] = useState(null)  // null | 'new' | { entry, autoRow? }
 
   // ── Computed auto data ────────────────────────────────────────────────────
@@ -254,19 +256,21 @@ export default function CashflowView({
     }
   }
 
-  function syncAll() {
+  async function syncAll() {
     const toSync = mergedRows.filter(r => r.auto && !r.manual)
     if (toSync.length === 0) {
-      alert('Todos los meses con datos calculados ya tienen ajuste manual.')
+      dialog.alert({ type: 'info', title: 'Sin pendientes', message: 'Todos los meses con datos calculados ya tienen ajuste manual.' })
       return
     }
-    if (!window.confirm(`¿Guardar ${toSync.length} mes(es) con valores calculados automáticamente?`)) return
+    const ok = await dialog.confirm({ title: '¿Guardar ajustes?', message: `¿Guardar ${toSync.length} mes(es) con valores calculados automáticamente?`, confirmText: 'Guardar' })
+    if (!ok) return
     toSync.forEach(row => syncRow(row))
   }
 
-  function removeOverride(row) {
+  async function removeOverride(row) {
     if (!row.manual) return
-    if (!window.confirm(`¿Eliminar el ajuste manual de ${MONTHS[row.month]} ${row.year}? Se usarán los valores calculados.`)) return
+    const ok = await dialog.confirm({ title: '¿Eliminar ajuste?', message: `¿Eliminar el ajuste manual de ${MONTHS[row.month]} ${row.year}? Se usarán los valores calculados.`, confirmText: 'Eliminar' })
+    if (!ok) return
     onDeleteCashflow(row.manual.id)
   }
 
@@ -442,7 +446,7 @@ export default function CashflowView({
                         )}
                         {row.manual && (
                           <button className="btn btn-xs btn-quiet" style={{ color:'var(--bad)' }}
-                            onClick={() => { if (window.confirm(`¿Eliminar entrada de ${MONTHS[row.month]} ${row.year}?`)) onDeleteCashflow(row.manual.id) }}>
+                            onClick={() => dialog.danger({ itemName: `entrada de ${MONTHS[row.month]} ${row.year}`, title: '¿Eliminar?' }).then(ok => ok && onDeleteCashflow(row.manual.id))}>
                             <Icon name="close" size={12}/>
                           </button>
                         )}

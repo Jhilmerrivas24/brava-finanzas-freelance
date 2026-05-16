@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useDialog } from '../hooks/useDialog.js'
 import { motion } from 'framer-motion'
 import { progressTransition, staggerContainer, staggerItem } from '../lib/animations.js'
 import Icon from '../components/Icon.jsx'
@@ -502,6 +503,7 @@ function AportarModal({ goal, onSave, onClose }) {
 
 // ── GoalCard ───────────────────────────────────────────────────────────────────
 function GoalCard({ goal, effectiveCurrent, onEdit, onDelete, onAportar }) {
+  const dialog = useDialog()
   const typeInfo = TYPE_MAP[goal.type || 'manual']
   const isAuto   = typeInfo?.auto
   const isHours  = goal.type === 'hours_ytd'
@@ -578,7 +580,7 @@ function GoalCard({ goal, effectiveCurrent, onEdit, onDelete, onAportar }) {
           <Icon name="settings" size={12}/> Editar
         </button>
         <button className="btn btn-xs btn-quiet" style={{ color: 'var(--bad)', marginLeft: 'auto' }}
-          onClick={() => { if (window.confirm(`¿Eliminar "${goal.name}"?`)) onDelete(goal.id) }}>
+          onClick={() => dialog.danger({ itemName: goal.name, title: '¿Eliminar?' }).then(ok => ok && onDelete(goal.id))}>
           <Icon name="close" size={12}/>
         </button>
       </div>

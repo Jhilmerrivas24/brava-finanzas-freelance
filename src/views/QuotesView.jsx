@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useDialog } from '../hooks/useDialog.js'
 import jsPDF from 'jspdf'
 import Icon from '../components/Icon.jsx'
 import Avatar from '../components/Avatar.jsx'
@@ -588,6 +589,7 @@ function QuoteForm({ quote, clients, settings, onSave, onCancel }) {
 
 // ── History panel ─────────────────────────────────
 function HistoryPanel({ quotes, onSelect, onChangeStatus, onDelete, selectedId }) {
+  const dialog = useDialog()
   if (quotes.length === 0) {
     return (
       <div className="quote-history-empty">
@@ -629,7 +631,7 @@ function HistoryPanel({ quotes, onSelect, onChangeStatus, onDelete, selectedId }
               <button
                 className="btn btn-xs btn-quiet"
                 style={{ color: 'var(--bad)', padding: '0 4px' }}
-                onClick={() => { if (window.confirm(`¿Eliminar ${q.id}?`)) onDelete(q.id) }}
+                onClick={() => dialog.danger({ itemName: q.id, title: '¿Eliminar?' }).then(ok => ok && onDelete(q.id))}
               >
                 <Icon name="trash" size={11} />
               </button>
@@ -692,6 +694,7 @@ function RangePanel({ quotes }) {
 
 // ── Main view ─────────────────────────────────────
 export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDeleteQuote, onChangeStatus, onConvertToInvoice, onGoto, clients = [], settings }) {
+  const dialog = useDialog()
   const [mode, setMode]                 = useState('list')   // 'list' | 'new' | 'edit'
   const [editingQuote, setEditingQuote] = useState(null)
   const [selectedId, setSelectedId]     = useState(null)
@@ -721,10 +724,13 @@ export default function QuotesView({ quotes = [], onAddQuote, onEditQuote, onDel
     setEditingQuote(null)
   }
 
-  function handleConvert(q) {
-    if (!window.confirm(
-      `¿Convertir la cotización ${q.id} en factura?\n\nSe creará una factura pendiente de cobro y la cotización quedará marcada como "Facturada".`
-    )) return
+  async function handleConvert(q) {
+    const ok = await dialog.confirm({
+      title: '¿Convertir a factura?',
+      message: `¿Convertir la cotización ${q.id} en factura?\n\nSe creará una factura pendiente de cobro y la cotización quedará marcada como "Facturada".`,
+      confirmText: 'Convertir',
+    })
+    if (!ok) return
     onConvertToInvoice(q)
     // onConvertToInvoice navigates to invoices automatically via App.jsx
   }
