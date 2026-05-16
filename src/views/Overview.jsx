@@ -434,20 +434,74 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
               <Ring value={taxPct} size={140} stroke={12} />
               <div className="tax-ring-center">
                 <div className="tax-pct">{(taxPct * 100).toFixed(0)}%</div>
-                <div className="tax-cap">de lo necesario</div>
+                <div className="tax-cap">renta cubierta</div>
               </div>
             </div>
           </div>
           <div className="tax-numbers">
             <div>
-              <div className="lbl">Apartado</div>
+              <div className="lbl">Renta apartada</div>
               <div className="num">{fmtPEN(data.taxSetAside)}</div>
             </div>
             <div>
-              <div className="lbl">Faltante</div>
+              <div className="lbl">Faltante renta</div>
               <div className="num ink-warn">{fmtPEN(Math.max(0, data.taxTarget - data.taxSetAside))}</div>
             </div>
           </div>
+
+          {/* ── Desglose IGV + Retención del mes ── */}
+          {(data.igvThisMonth > 0 || data.retentionThisMonth > 0) && (
+            <div style={{
+              borderTop: '1px solid var(--border)',
+              paddingTop: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+                letterSpacing: '0.06em', color: 'var(--ink-mute)', marginBottom: 2 }}>
+                Obligaciones del mes
+              </div>
+              {data.igvThisMonth > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--ink-mute)' }}>IGV facturas</span>
+                  <span className="mono" style={{ color: 'var(--bad)', fontWeight: 600 }}>
+                    {fmtPEN(data.igvThisMonth)}
+                  </span>
+                </div>
+              )}
+              {data.retentionThisMonth > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--ink-mute)' }}>Retención RH</span>
+                  <span className="mono" style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                    {fmtPEN(data.retentionThisMonth)}
+                  </span>
+                </div>
+              )}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', fontSize: 13,
+                borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 2,
+              }}>
+                <span style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>Total a reservar</span>
+                <span className="mono" style={{ fontWeight: 700 }}>
+                  {fmtPEN(data.igvThisMonth + data.retentionThisMonth)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Zero-tax month — boletas only */}
+          {data.igvThisMonth === 0 && data.retentionThisMonth === 0 && data.inThisMonth > 0 && (
+            <div style={{
+              borderTop: '1px solid var(--border)', paddingTop: 10,
+              display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5,
+              color: 'var(--good)',
+            }}>
+              <span>✓</span>
+              <span>Sin IGV ni retención este mes — ingresos 100% líquidos</span>
+            </div>
+          )}
+
           <button className="btn btn-soft btn-full" onClick={() => onGoto('taxes')}>
             Ver detalle de impuestos <Icon name="arrowRight" size={12} />
           </button>

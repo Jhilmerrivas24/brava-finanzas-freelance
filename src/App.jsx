@@ -140,11 +140,37 @@ function Dashboard({ signOut, userEmail } = {}) {
     // Only sum bills that are not explicitly paused / inactive
     const outThisMonth = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
 
-    const allPaidIncome = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0)
-    const taxTarget     = allPaidIncome * ((settings.taxRate || 30) / 100)
     const cashAvailable = accounts.reduce((s, a) => s + (a.balance || 0), 0)
 
-    // taxSetAside = confirmed payments registered in tax periods
+    // ── Tax calculations — corrected by docType ───────────────────────────────
+    // Only 'factura' (with RUC) and 'rh' generate fiscal obligations.
+    // 'boleta' and 'sin_declarar' are 100% liquid — no tax reserve needed.
+
+    // Helper: is this month?
+    const isThisMon = (i) => {
+      if (!i.issuedDate) return false
+      const d = new Date(i.issuedDate)
+      return d.getMonth() === thisMon && d.getFullYear() === thisYear
+    }
+
+    // IGV obligation this month — facturas paid this month
+    // (igv field is 18% of base, set by NewInvoiceModal)
+    const igvThisMonth = invoices
+      .filter(i => i.status === 'paid' && i.docType === 'factura' && isThisMon(i))
+      .reduce((s, i) => s + (i.igv || i.amount * 0.18), 0)
+
+    // Retention from RH paid this month (hasRetention === true → client retains 8%)
+    const retentionThisMonth = invoices
+      .filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isThisMon(i))
+      .reduce((s, i) => s + (i.retention || 0), 0)
+
+    // Renta (income tax) target — only fiscal documents (factura + rh), all time
+    const allFiscalIncome = invoices
+      .filter(i => i.status === 'paid' && (i.docType === 'factura' || i.docType === 'rh'))
+      .reduce((s, i) => s + (i.amount || 0), 0)
+    const taxTarget = allFiscalIncome * ((settings.taxRate || 30) / 100)
+
+    // taxSetAside = confirmed renta payments already registered in TaxesView
     const taxSetAside = (taxPeriods || []).reduce((s, p) => s + (p.paid || 0), 0)
 
     // Hours from quotes this month (unit 'hr' or 'hora')
@@ -179,6 +205,8 @@ function Dashboard({ signOut, userEmail } = {}) {
       outThisMonth,
       taxSetAside,
       taxTarget,
+      igvThisMonth,
+      retentionThisMonth,
       hoursBilled,
       hoursPaid,
       projectedIncome,

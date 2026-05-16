@@ -561,8 +561,17 @@ export default function TaxesView({
   const detractionPct  = settings?.detractionPct ?? 12
   const paymentDay     = settings?.paymentDay    ?? 21
 
-  const paidIncome    = (invoices||[]).filter(i=>i.status==='paid').reduce((s,i)=>s+i.amount,0)
+  // Only fiscal documents generate income tax obligation
+  // boletas and sin_declarar are 100% liquid — excluded from tax base
+  const paidIncome    = (invoices||[])
+    .filter(i => i.status === 'paid' && (i.docType === 'factura' || i.docType === 'rh'))
+    .reduce((s, i) => s + i.amount, 0)
   const totalReserved = paidIncome * (taxRate/100)
+
+  // Boletas — reference only, no fiscal impact
+  const boletasEmitidas = useMemo(() =>
+    (invoices||[]).filter(i => i.docType === 'boleta' || i.docType === 'sin_declarar')
+  , [invoices])
 
   // ── Merge: taxInvoices + invoices (factura/rh) not yet in tax arrays ─────────
   const allFaturas = useMemo(() => {
@@ -621,6 +630,7 @@ export default function TaxesView({
     { id:'facturas', label:'Facturas emitidas', count: allFaturas.length },
     { id:'rh',       label:'RHs', count: allRHs.length },
     { id:'compras',  label:'Compras', count:(taxPurchases||[]).length },
+    { id:'boletas',  label:'Boletas', count: boletasEmitidas.length },
   ]
 
   return (
@@ -943,6 +953,98 @@ export default function TaxesView({
                 </div>
               </>
           }
+        </>
+      )}
+
+      {/* ── BOLETAS (referencia, sin impacto fiscal) ──────────────────────── */}
+      {tab==='boletas' && (
+        <>
+          <div className="card" style={{ padding: '14px 18px', background: 'var(--warn-soft)',
+            border: '1px solid var(--warn)', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 18 }}>ℹ️</span>
+            <div style={{ fontSize: 13, color: 'var(--warn)' }}>
+              <strong>Las boletas y servicios sin declarar no generan IGV ni impactan tu base imponible.</strong>
+              {' '}El ingreso cobrado es 100% líquido. Se muestran aquí solo como referencia.
+            </div>
+          </div>
+
+          {boletasEmitidas.length === 0
+            ? <div className="empty-state">
+                <div className="empty-state-icon"><Icon name="invoice" size={22}/></div>
+                <h3>Sin boletas registradas</h3>
+                <p>Las facturas de tipo boleta o servicio sin declarar aparecerán aquí.</p>
+              </div>
+            : <div className="card card-flat">
+                <table className="invoice-table invoice-table-full">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Cliente</th>
+                      <th>Tipo</th>
+                      <th>Fecha</th>
+                      <th className="num-col">Monto</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boletasEmitidas.map(inv => (
+                      <tr key={inv.id}>
+                        <td className="mono" style={{ fontSize: 12 }}>{inv.id}</td>
+                        <td>{inv.client}</td>
+                        <td>
+                          <span style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 999,
+                            background: 'var(--mute-soft)', color: 'var(--ink-mute)',
+                          }}>
+                            {inv.docType === 'boleta' ? 'Boleta' : 'Sin declarar'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{inv.issued || inv.issuedDate || '—'}</td>
+                        <td className="num-col mono">{fmtPEN(inv.amount || 0)}</td>
+                        <td>
+                          <span className={`pill ${inv.status === 'paid' ? 'pill-good' : 'pill-warn'}`}>
+                            {inv.status === 'paid' ? 'Cobrada' : 'Pendiente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          }
+
+          {/* Summary */}
+          {boletasEmitidas.length > 0 && (
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+                <div>
+                  <div className="lbl" style={{ fontSize: 11, color: 'var(--ink-mute)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Total emitido
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 600 }}>
+                    {fmtPEN(boletasEmitidas.reduce((s, i) => s + (i.amount || 0), 0))}
+                  </div>
+                </div>
+                <div>
+                  <div className="lbl" style={{ fontSize: 11, color: 'var(--ink-mute)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Total cobrado
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: 'var(--good)' }}>
+                    {fmtPEN(boletasEmitidas.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0))}
+                  </div>
+                </div>
+                <div>
+                  <div className="lbl" style={{ fontSize: 11, color: 'var(--ink-mute)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    IGV generado
+                  </div>
+                  <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: 'var(--good)' }}>
+                    S/ 0.00
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--good)', marginTop: 2 }}>✓ 100% líquido</div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
