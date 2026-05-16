@@ -127,15 +127,17 @@ function exportToExcel(invoices, settings) {
 }
 
 // ── Collection Alerts panel ───────────────────────
-const TODAY = new Date()
-TODAY.setHours(0, 0, 0, 0)
-const IN_7_DAYS = new Date(TODAY)
-IN_7_DAYS.setDate(IN_7_DAYS.getDate() + 7)
+// Computed as a function so it's always fresh (not stale if app left open overnight)
+function getToday() {
+  const t = new Date()
+  t.setHours(0, 0, 0, 0)
+  return t
+}
 
 function daysDiff(dueDate) {
   const d = new Date(dueDate)
   d.setHours(0, 0, 0, 0)
-  return Math.round((d - TODAY) / 86400000)
+  return Math.round((d - getToday()) / 86400000)
 }
 
 function whatsappMsg(inv) {

@@ -206,12 +206,13 @@ function Dashboard({ signOut, userEmail } = {}) {
     const thisYear = now.getFullYear()
     const thisMon  = now.getMonth() // 0-indexed
 
-    // Paid invoices this month (requires issuedDate field)
+    // Paid invoices this month — use paidAt if available, fallback to issuedDate
     const invoiceIncomeThisMonth = invoices
       .filter(i => {
         if (i.status !== 'paid') return false
-        if (!i.issuedDate) return false
-        const d = new Date(i.issuedDate)
+        const dateStr = i.paidAt || i.issuedDate
+        if (!dateStr) return false
+        const d = new Date(dateStr)
         return d.getMonth() === thisMon && d.getFullYear() === thisYear
       })
       .reduce((s, i) => s + i.amount, 0)
@@ -364,16 +365,16 @@ function Dashboard({ signOut, userEmail } = {}) {
         fetch('fixed_income'), fetch('accounts'),
       ])
 
-      // Only override state if Supabase returned rows (don't wipe localStorage data)
-      if (sbInvoices?.length)    setInvoices(sbInvoices)
-      if (sbClients?.length)     setClients(sbClients)
-      if (sbQuotes?.length)      setQuotes(sbQuotes)
-      if (sbBills?.length)       setBills(sbBills)
-      if (sbVarExp?.length)      setVariableExpenses(sbVarExp)
-      if (sbGoals?.length)       setGoals(sbGoals)
-      if (sbCashflow?.length)    setCashflow(sbCashflow)
-      if (sbFixedIncome?.length) setFixedIncome(sbFixedIncome)
-      if (sbAccounts?.length)    setAccounts(sbAccounts)
+      // Override state with Supabase data (including empty arrays — user may have deleted all)
+      if (Array.isArray(sbInvoices))    setInvoices(sbInvoices)
+      if (Array.isArray(sbClients))     setClients(sbClients)
+      if (Array.isArray(sbQuotes))      setQuotes(sbQuotes)
+      if (Array.isArray(sbBills))       setBills(sbBills)
+      if (Array.isArray(sbVarExp))      setVariableExpenses(sbVarExp)
+      if (Array.isArray(sbGoals))       setGoals(sbGoals)
+      if (Array.isArray(sbCashflow))    setCashflow(sbCashflow)
+      if (Array.isArray(sbFixedIncome)) setFixedIncome(sbFixedIncome)
+      if (Array.isArray(sbAccounts))    setAccounts(sbAccounts)
     }
 
     loadFromSupabase()
@@ -457,8 +458,9 @@ function Dashboard({ signOut, userEmail } = {}) {
 
   function _confirmMarkPaid(pm, accountId) {
     const { id, amount, client } = pm
-    setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid' } : i))
-    sbWrite('invoices', 'update', { id, status: 'paid' }, id)
+    const paidAt = new Date().toISOString().split('T')[0]
+    setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid', paidAt } : i))
+    sbWrite('invoices', 'update', { id, status: 'paid', paidAt }, id)
 
     if (accountId) {
       addAccountMovement({

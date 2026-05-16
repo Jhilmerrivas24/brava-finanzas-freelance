@@ -76,8 +76,9 @@ function buildPeriods(taxInvoices, taxRH, rentaRate, taxPurchases, bills, variab
   })
 
   // ── Crédito fiscal: compras con IGV (taxPurchases) ───────────────────────
+  // ensure() crea el período aunque no haya facturas ese mes, para no perder el crédito
   ;(taxPurchases||[]).forEach(x => {
-    const k = parseMonthKey(x.date); if (!k || !map[k]) return
+    const k = parseMonthKey(x.date); if (!k) return; ensure(k)
     map[k].igvCredito += x.igv || 0
   })
 

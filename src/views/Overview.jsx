@@ -967,8 +967,8 @@ export default function Overview({
         <div className="card card-tax">
           <div className="card-head">
             <div>
-              <div className="card-eyebrow">Reserva impuestos</div>
-              <h3 className="card-title">Impuestos al día</h3>
+              <div className="card-eyebrow">Reserva impuestos{!isCurrentMonth ? ' · Datos actuales' : ''}</div>
+              <h3 className="card-title">Impuestos al día{!isCurrentMonth ? <span style={{ fontSize:11, fontWeight:400, color:'var(--ink-mute)', marginLeft:6 }}>(año en curso)</span> : ''}</h3>
             </div>
           </div>
           <div className="tax-ring">

@@ -14,7 +14,13 @@ export default function GastosView({
   const [tab, setTab] = useState('fixed')
 
   const totalFixed    = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
-  const totalVariable = (variableExpenses || []).reduce((s, e) => s + e.amount, 0)
+  // Solo gastos variables del mes actual
+  const now = new Date()
+  const totalVariable = (variableExpenses || []).filter(e => {
+    if (!e.date) return false
+    const d = new Date(e.date)
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  }).reduce((s, e) => s + e.amount, 0)
 
   const TABS = [
     { id: 'fixed',    label: 'Gastos fijos',    count: (bills || []).length },
@@ -30,7 +36,7 @@ export default function GastosView({
           <h1>Gastos</h1>
           <p className="lede">
             Fijos activos: {fmtPEN(totalFixed, { decimals:0 })}/mes
-            {totalVariable > 0 && <> · Variables registrados: {fmtPEN(totalVariable, { decimals:0 })}</>}
+            {totalVariable > 0 && <> · Variables este mes: {fmtPEN(totalVariable, { decimals:0 })}</>}
           </p>
         </div>
       </header>

@@ -251,10 +251,15 @@ function CreditCard({ cl, onEdit, onDelete, onPay, variableExpenses }) {
     })
     .reduce((s, e) => s + (e.amount || 0), 0)
 
-  // Days until payment due
-  const today = now.getDate()
-  let daysUntilPay = cl.fechaPago ? cl.fechaPago - today : null
-  if (daysUntilPay !== null && daysUntilPay < 0) daysUntilPay += 30
+  // Days until payment due — build actual next due date to handle month length correctly
+  let daysUntilPay = null
+  if (cl.fechaPago) {
+    const target = new Date(now.getFullYear(), now.getMonth(), cl.fechaPago)
+    target.setHours(0, 0, 0, 0)
+    const todayMid = new Date(now); todayMid.setHours(0, 0, 0, 0)
+    if (target <= todayMid) target.setMonth(target.getMonth() + 1)
+    daysUntilPay = Math.round((target - todayMid) / 86400000)
+  }
 
   const urgente = daysUntilPay !== null && daysUntilPay <= 5 && usado > 0
 

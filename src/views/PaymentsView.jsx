@@ -306,7 +306,7 @@ export default function PaymentsView({
   [bills])
 
   const loanItems = useMemo(() => loans
-    .filter(l => l.activo !== false && (l.saldoPendiente ?? 1) > 0)
+    .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
     .map(l => ({
       type:         'loan',
       id:           l.id,

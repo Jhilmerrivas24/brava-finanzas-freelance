@@ -11,10 +11,11 @@ const TIPO_COLOR = { personal: '#3b82f6', hipotecario: '#10b981', vehicular: '#f
 
 function daysUntilPayment(diaPago) {
   if (!diaPago) return null
-  const today = new Date()
-  const current = today.getDate()
-  let days = diaPago - current
-  if (days < 0) days += 30 // approximate next month
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(today.getFullYear(), today.getMonth(), diaPago)
+  target.setHours(0, 0, 0, 0)
+  if (target <= today) target.setMonth(target.getMonth() + 1)
+  let days = Math.round((target - today) / 86400000)
   return days
 }
 

@@ -416,7 +416,10 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
               {docType !== 'sin_declarar' && (
                 <div className="invoice-preview-row invoice-preview-row-quiet">
                   <span className="ink-mute">Reserva {taxRate}% impuestos</span>
-                  <span className="mono ink-mute">{fmtPEN(amtNum * (taxRate/100))}</span>
+                  {/* RH: reserva sobre neto (bruto − 8% retención); factura: sobre base */}
+                  <span className="mono ink-mute">
+                    {fmtPEN((docType === 'rh' ? amtNum * 0.92 : amtNum) * (taxRate/100))}
+                  </span>
                 </div>
               )}
               {margin !== null && (
