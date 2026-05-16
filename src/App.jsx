@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { viewTransition } from './lib/animations.js'
 import Sidebar from './components/Sidebar.jsx'
 import Icon from './components/Icon.jsx'
 import Overview from './views/Overview.jsx'
@@ -553,108 +555,117 @@ function Dashboard({ signOut, userEmail } = {}) {
         </div>
 
         <div className="scroll">
-          {view === 'overview'  && <Overview     {...viewProps} />}
-          {view === 'quotes'    && (
-            <QuotesView
-              quotes={quotes}
-              clients={clients}
-              settings={settings}
-              onAddQuote={addQuote}
-              onEditQuote={editQuote}
-              onDeleteQuote={deleteQuote}
-              onChangeStatus={changeQuoteStatus}
-              onConvertToInvoice={addInvoiceFromQuote}
-              onGoto={setView}
-            />
-          )}
-          {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
-          {view === 'clients'   && (
-            <ClientsView
-              clients={clients}
-              invoices={invoices}
-              onAddClient={addClient}
-              onEditClient={editClient}
-              onDeleteClient={deleteClient}
-              onNewInvoice={() => setModalOpen(true)}
-            />
-          )}
-          {view === 'cashflow'  && (
-            <CashflowView
-              cashflow={cashflow}
-              onAddCashflow={addCashflow}
-              onEditCashflow={editCashflow}
-              onDeleteCashflow={deleteCashflow}
-              invoices={invoices}
-              fixedIncome={fixedIncome}
-              bills={bills}
-              variableExpenses={variableExpenses}
-            />
-          )}
-          {view === 'taxes' && (
-            <TaxesView
-              invoices={invoices}
-              settings={settings}
-              clients={clients}
-              onDeleteInvoice={deleteInv}
-              onSaveSettings={handleSaveSettings}
-              taxPeriods={taxPeriods}
-              onUpdateTaxPeriod={updateTaxPeriod}
-              taxInvoices={taxInvoices}
-              onAddTaxInvoice={addTaxInvoice}
-              onEditTaxInvoice={editTaxInvoice}
-              onDeleteTaxInvoice={deleteTaxInvoice}
-              taxRH={taxRH}
-              onAddTaxRH={addTaxRH}
-              onEditTaxRH={editTaxRH}
-              onDeleteTaxRH={deleteTaxRH}
-              taxPurchases={taxPurchases}
-              onAddTaxPurchase={addTaxPurchase}
-              onEditTaxPurchase={editTaxPurchase}
-              onDeleteTaxPurchase={deleteTaxPurchase}
-              bills={bills}
-              variableExpenses={variableExpenses}
-            />
-          )}
-          {view === 'budget'    && (
-            <BudgetView bills={bills} />
-          )}
-          {view === 'goals'     && (
-            <GoalsView
-              goals={goals}
-              onAddGoal={addGoal}
-              onEditGoal={editGoal}
-              onDeleteGoal={deleteGoal}
-              onAportar={aportar}
-              invoices={invoices}
-              accounts={accounts}
-              quotes={quotes}
-              bills={bills}
-            />
-          )}
-          {view === 'gastos'    && (
-            <GastosView
-              bills={bills}
-              onAddBill={addBill}
-              onEditBill={editBill}
-              onDeleteBill={deleteBill}
-              variableExpenses={variableExpenses}
-              onAddVariableExpense={addVariableExpense}
-              onEditVariableExpense={editVariableExpense}
-              onDeleteVariableExpense={deleteVariableExpense}
-            />
-          )}
-          {view === 'ingresos'  && (
-            <IngresosView
-              fixedIncome={fixedIncome}
-              onAddIncome={addIncome}
-              onEditIncome={editIncome}
-              onDeleteIncome={deleteIncome}
-              invoices={invoices}
-              clients={clients}
-            />
-          )}
-          {view === 'consejos'  && <ConsejosView {...viewProps} />}
-          {view === 'settings'  && <SettingsView settings={settings} onSave={handleSaveSettings} />}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={view}
+              variants={viewTransition}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              style={{ minHeight: '100%' }}
+            >
+              {view === 'overview'  && <Overview     {...viewProps} />}
+              {view === 'quotes'    && (
+                <QuotesView
+                  quotes={quotes}
+                  clients={clients}
+                  settings={settings}
+                  onAddQuote={addQuote}
+                  onEditQuote={editQuote}
+                  onDeleteQuote={deleteQuote}
+                  onChangeStatus={changeQuoteStatus}
+                  onConvertToInvoice={addInvoiceFromQuote}
+                  onGoto={setView}
+                />
+              )}
+              {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
+              {view === 'clients'   && (
+                <ClientsView
+                  clients={clients}
+                  invoices={invoices}
+                  onAddClient={addClient}
+                  onEditClient={editClient}
+                  onDeleteClient={deleteClient}
+                  onNewInvoice={() => setModalOpen(true)}
+                />
+              )}
+              {view === 'cashflow'  && (
+                <CashflowView
+                  cashflow={cashflow}
+                  onAddCashflow={addCashflow}
+                  onEditCashflow={editCashflow}
+                  onDeleteCashflow={deleteCashflow}
+                  invoices={invoices}
+                  fixedIncome={fixedIncome}
+                  bills={bills}
+                  variableExpenses={variableExpenses}
+                />
+              )}
+              {view === 'taxes' && (
+                <TaxesView
+                  invoices={invoices}
+                  settings={settings}
+                  clients={clients}
+                  onDeleteInvoice={deleteInv}
+                  onSaveSettings={handleSaveSettings}
+                  taxPeriods={taxPeriods}
+                  onUpdateTaxPeriod={updateTaxPeriod}
+                  taxInvoices={taxInvoices}
+                  onAddTaxInvoice={addTaxInvoice}
+                  onEditTaxInvoice={editTaxInvoice}
+                  onDeleteTaxInvoice={deleteTaxInvoice}
+                  taxRH={taxRH}
+                  onAddTaxRH={addTaxRH}
+                  onEditTaxRH={editTaxRH}
+                  onDeleteTaxRH={deleteTaxRH}
+                  taxPurchases={taxPurchases}
+                  onAddTaxPurchase={addTaxPurchase}
+                  onEditTaxPurchase={editTaxPurchase}
+                  onDeleteTaxPurchase={deleteTaxPurchase}
+                  bills={bills}
+                  variableExpenses={variableExpenses}
+                />
+              )}
+              {view === 'budget'    && <BudgetView bills={bills} />}
+              {view === 'goals'     && (
+                <GoalsView
+                  goals={goals}
+                  onAddGoal={addGoal}
+                  onEditGoal={editGoal}
+                  onDeleteGoal={deleteGoal}
+                  onAportar={aportar}
+                  invoices={invoices}
+                  accounts={accounts}
+                  quotes={quotes}
+                  bills={bills}
+                />
+              )}
+              {view === 'gastos'    && (
+                <GastosView
+                  bills={bills}
+                  onAddBill={addBill}
+                  onEditBill={editBill}
+                  onDeleteBill={deleteBill}
+                  variableExpenses={variableExpenses}
+                  onAddVariableExpense={addVariableExpense}
+                  onEditVariableExpense={editVariableExpense}
+                  onDeleteVariableExpense={deleteVariableExpense}
+                />
+              )}
+              {view === 'ingresos'  && (
+                <IngresosView
+                  fixedIncome={fixedIncome}
+                  onAddIncome={addIncome}
+                  onEditIncome={editIncome}
+                  onDeleteIncome={deleteIncome}
+                  invoices={invoices}
+                  clients={clients}
+                />
+              )}
+              {view === 'consejos'  && <ConsejosView {...viewProps} />}
+              {view === 'settings'  && <SettingsView settings={settings} onSave={handleSaveSettings} />}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 

@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { progressTransition } from '../lib/animations.js'
 import Icon from '../components/Icon.jsx'
 import { fmtPEN } from '../data.js'
 import { loadData, saveData, KEYS } from '../lib/storage.js'
@@ -60,13 +62,12 @@ function prevMonthKey(year, month) {
 function ProgressBar({ pct, color, height = 6 }) {
   return (
     <div style={{ height, borderRadius: height / 2, background: 'var(--bg-sunk)', overflow: 'hidden' }}>
-      <div style={{
-        height: '100%',
-        width: `${Math.min(pct * 100, 100)}%`,
-        background: color,
-        borderRadius: height / 2,
-        transition: 'width 0.3s ease',
-      }}/>
+      <motion.div
+        style={{ height: '100%', background: color, borderRadius: height / 2 }}
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.min(pct * 100, 100)}%` }}
+        transition={progressTransition}
+      />
     </div>
   )
 }

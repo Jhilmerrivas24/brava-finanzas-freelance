@@ -4,9 +4,33 @@ import Bar from '../components/Bar.jsx'
 import Ring from '../components/Ring.jsx'
 import StatusPill from '../components/StatusPill.jsx'
 import CashflowChart from '../components/CashflowChart.jsx'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { staggerContainer, staggerItem, hoverLift, tapScale } from '../lib/animations.js'
 import { fmtPEN } from '../data.js'
 import { loadData, KEYS } from '../lib/storage.js'
+
+// ── Count-up hook ─────────────────────────────────────────────────────────────
+function useCountUp(target, duration = 900) {
+  const [value, setValue] = useState(0)
+  const rafRef = useRef(null)
+  useEffect(() => {
+    const start = performance.now()
+    const from = 0
+    cancelAnimationFrame(rafRef.current)
+    function tick(now) {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setValue(from + (target - from) * eased)
+      if (progress < 1) rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [target, duration])
+  return value
+}
 
 const ACCOUNT_TYPES = ['Cuenta corriente', 'Cuenta de ahorros', 'Cuenta negocio', 'Billetera digital', 'Otro']
 
@@ -65,11 +89,23 @@ function AccountModal({ initial, onSave, onClose }) {
   )
 }
 
-function KpiCard({ label, value, delta, deltaPositive, foot, accent }) {
+function KpiCard({ label, value, delta, deltaPositive, foot, accent, rawValue }) {
+  // Count-up: only if rawValue (number) provided
+  const counted = useCountUp(rawValue ?? 0)
+  const displayValue = rawValue != null
+    ? value.replace(/[\d,]+\.?\d*/, fmtPEN(counted).replace('S/ ', ''))
+    : value
+
   return (
-    <div className={`kpi ${accent ? 'kpi-accent' : ''}`}>
+    <motion.div
+      className={`kpi ${accent ? 'kpi-accent' : ''}`}
+      variants={staggerItem}
+      whileHover={hoverLift}
+      whileTap={tapScale}
+      style={{ cursor: 'default' }}
+    >
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{value}</div>
+      <div className="kpi-value">{rawValue != null ? fmtPEN(counted) : value}</div>
       {delta && (
         <div className={`kpi-delta ${deltaPositive ? 'is-pos' : 'is-neg'}`}>
           <Icon name={deltaPositive ? 'arrowUp' : 'arrowDown'} size={12} />
@@ -77,7 +113,7 @@ function KpiCard({ label, value, delta, deltaPositive, foot, accent }) {
         </div>
       )}
       {foot && <div className="kpi-foot">{foot}</div>}
-    </div>
+    </motion.div>
   )
 }
 
@@ -286,16 +322,23 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
         </div>
       </header>
 
-      <section className="kpi-row">
+      <motion.section
+        className="kpi-row"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+      >
         <KpiCard
           label="Disponible para gastar"
           value={fmtPEN(data.cashAvailable)}
+          rawValue={data.cashAvailable}
           foot={runwayMonths > 0 ? `Runway: ~${runwayMonths.toFixed(1)} meses` : 'Configura tus cuentas'}
           accent
         />
         <KpiCard
           label="Ingresos del mes"
           value={fmtPEN(data.inThisMonth)}
+          rawValue={data.inThisMonth}
           foot={
             data.projectedIncome > 0
               ? `${invoices.filter(i => i.status === 'paid').length} cobradas · +${fmtPEN(data.projectedIncome, { decimals: 0 })} proyectado`
@@ -305,15 +348,17 @@ export default function Overview({ data, invoices, bills, goals, accounts, clien
         <KpiCard
           label="Egresos del mes"
           value={fmtPEN(data.outThisMonth)}
+          rawValue={data.outThisMonth}
           foot={`${(bills || []).length} gasto${(bills||[]).length !== 1 ? 's' : ''} fijo${(bills||[]).length !== 1 ? 's' : ''} activo${(bills||[]).length !== 1 ? 's' : ''}`}
         />
         <KpiCard
           label="Neto"
           value={fmtPEN(net, { sign: data.inThisMonth > 0 || data.outThisMonth > 0 })}
+          rawValue={net}
           foot={data.inThisMonth > 0 ? `Margen ${((net / data.inThisMonth) * 100).toFixed(0)}%` : 'Sin movimientos aún'}
           deltaPositive={net >= 0}
         />
-      </section>
+      </motion.section>
 
       {/* Projected income notice — cotizaciones aceptadas sin factura */}
       {data.projectedIncome > 0 && (

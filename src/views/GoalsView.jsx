@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { progressTransition, staggerContainer, staggerItem } from '../lib/animations.js'
 import Icon from '../components/Icon.jsx'
 import { GOAL_COLORS, fmtPEN } from '../data.js'
 import { loadData, saveData, KEYS } from '../lib/storage.js'
@@ -535,7 +537,13 @@ function GoalCard({ goal, effectiveCurrent, onEdit, onDelete, onAportar }) {
       </div>
       <div className="goal-progress">
         <div className="goal-progress-track">
-          <div className="goal-progress-fill" style={{ width: `${p * 100}%`, background: goal.color }}/>
+          <motion.div
+          className="goal-progress-fill"
+          style={{ background: goal.color }}
+          initial={{ width: 0 }}
+          animate={{ width: `${p * 100}%` }}
+          transition={progressTransition}
+        />
         </div>
       </div>
       <div className="goal-card-stats">

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { motion } from 'framer-motion'
 import { supabase } from '../lib/supabase.js'
 
 const ACCENT = '#1D9E75'
@@ -8,6 +9,7 @@ export default function LoginView({ onGoRegister, onGoForgot }) {
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
+  const [shakeKey, setShakeKey] = useState(0)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -15,13 +17,28 @@ export default function LoginView({ onGoRegister, onGoForgot }) {
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
-    if (error) setError(error.message)
+    if (error) {
+      setError(error.message)
+      setShakeKey(k => k + 1) // remount shake animation
+    }
     // On success, AuthContext listener redirects automatically
   }
 
   return (
     <div style={styles.page}>
-      <div style={styles.card}>
+      <motion.div
+        key={shakeKey}
+        style={styles.card}
+        initial={{ opacity: 0, scale: 0.92, y: 16 }}
+        animate={shakeKey > 0
+          ? { opacity: 1, scale: 1, y: 0, x: [0, -10, 10, -8, 8, -4, 4, 0] }
+          : { opacity: 1, scale: 1, y: 0 }
+        }
+        transition={shakeKey > 0
+          ? { duration: 0.45, ease: 'easeInOut' }
+          : { type: 'spring', stiffness: 280, damping: 24 }
+        }
+      >
         {/* Logo */}
         <div style={styles.logoRow}>
           <div style={styles.logoMark}>
@@ -87,7 +104,7 @@ export default function LoginView({ onGoRegister, onGoForgot }) {
             ¿No tienes cuenta? <strong>Regístrate</strong>
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   )
 }
