@@ -456,7 +456,7 @@ export default function Overview({
     const outVar          = (variableExpenses || []).filter(e => isMon(e.date)).reduce((s, e) => s + e.amount, 0)
     const outThisMonth    = outBills + outVar
 
-    const igvThisMonth    = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'factura' && isMon(i.issuedDate)).reduce((s, i) => s + (i.igv || i.amount * 0.18), 0)
+    const igvThisMonth    = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'factura' && isMon(i.issuedDate)).reduce((s, i) => s + (i.igv ?? i.amount * 0.18), 0)
     const retentionThisMonth = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isMon(i.issuedDate)).reduce((s, i) => s + (i.retention || 0), 0)
 
     const qm         = (quotes || []).filter(q => q.date && isMon(q.date))

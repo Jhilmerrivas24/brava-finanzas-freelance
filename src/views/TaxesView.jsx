@@ -577,7 +577,7 @@ export default function TaxesView({
   const allFaturas = useMemo(() => {
     const linked = new Set((taxInvoices||[]).map(ti => ti.fromInvoiceId).filter(Boolean))
     const fromMain = (invoices||[])
-      .filter(inv => inv.docType === 'factura' && !linked.has(inv.id))
+      .filter(inv => inv.docType === 'factura' && !linked.has(inv.id) && inv.status === 'paid')
       .map(invToTaxRow)
     return [...(taxInvoices||[]), ...fromMain]
   }, [taxInvoices, invoices])
@@ -585,7 +585,7 @@ export default function TaxesView({
   const allRHs = useMemo(() => {
     const linked = new Set((taxRH||[]).map(r => r.fromInvoiceId).filter(Boolean))
     const fromMain = (invoices||[])
-      .filter(inv => inv.docType === 'rh' && !linked.has(inv.id))
+      .filter(inv => inv.docType === 'rh' && !linked.has(inv.id) && inv.status === 'paid')
       .map(invToRHRow)
     return [...(taxRH||[]), ...fromMain]
   }, [taxRH, invoices])

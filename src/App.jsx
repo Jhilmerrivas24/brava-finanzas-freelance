@@ -244,7 +244,7 @@ function Dashboard({ signOut, userEmail } = {}) {
     // (igv field is 18% of base, set by NewInvoiceModal)
     const igvThisMonth = invoices
       .filter(i => i.status === 'paid' && i.docType === 'factura' && isThisMon(i))
-      .reduce((s, i) => s + (i.igv || i.amount * 0.18), 0)
+      .reduce((s, i) => s + (i.igv ?? i.amount * 0.18), 0)
 
     // Retention from RH paid this month (hasRetention === true → client retains 8%)
     const retentionThisMonth = invoices
