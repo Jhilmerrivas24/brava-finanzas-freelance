@@ -413,10 +413,12 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
                   <span className="mono ink-strong">{fmtPEN(amtNum)}</span>
                 </div>
               )}
-              <div className="invoice-preview-row invoice-preview-row-quiet">
-                <span className="ink-mute">Reserva {taxRate}% impuestos</span>
-                <span className="mono ink-mute">{fmtPEN(amtNum * (taxRate/100))}</span>
-              </div>
+              {docType !== 'sin_declarar' && (
+                <div className="invoice-preview-row invoice-preview-row-quiet">
+                  <span className="ink-mute">Reserva {taxRate}% impuestos</span>
+                  <span className="mono ink-mute">{fmtPEN(amtNum * (taxRate/100))}</span>
+                </div>
+              )}
               {margin !== null && (
                 <div className="invoice-preview-row invoice-preview-row-quiet">
                   <span className="ink-mute">Margen</span>
