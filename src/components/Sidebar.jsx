@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { id: 'consejos',  label: 'Sugerencias',    icon: 'sparkle'   },
 ]
 
-export default function Sidebar({ view, setView, initials, displayName, displayRole }) {
+export default function Sidebar({ view, setView, initials, displayName, displayRole, onSignOut, userEmail }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -66,6 +66,31 @@ export default function Sidebar({ view, setView, initials, displayName, displayR
           <Icon name="settings" size={16} />
           <span className="sidebar-label">Ajustes</span>
         </button>
+
+        {onSignOut && (
+          <>
+            {userEmail && (
+              <div style={{
+                padding: '4px 12px 2px',
+                fontSize: 10,
+                color: 'var(--ink-faint)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {userEmail}
+              </div>
+            )}
+            <button
+              className="sidebar-item"
+              onClick={onSignOut}
+              style={{ color: 'var(--bad)', opacity: 0.8 }}
+            >
+              <Icon name="close" size={16} />
+              <span className="sidebar-label">Cerrar sesión</span>
+            </button>
+          </>
+        )}
       </div>
     </aside>
   )

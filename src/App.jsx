@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Icon from './components/Icon.jsx'
 import Overview from './views/Overview.jsx'
@@ -14,6 +14,11 @@ import ConsejosView from './views/ConsejosView.jsx'
 import SettingsView from './views/SettingsView.jsx'
 import QuotesView from './views/QuotesView.jsx'
 import NewInvoiceModal from './modals/NewInvoiceModal.jsx'
+import { supabase } from './lib/supabase.js'
+import { useAuth } from './auth/AuthContext.jsx'
+import LoginView from './auth/LoginView.jsx'
+import RegisterView from './auth/RegisterView.jsx'
+import ForgotPasswordView from './auth/ForgotPasswordView.jsx'
 // data.js imported in views directly
 
 const SEED_IDS = ['INV-0142','INV-0143','INV-0144','INV-0145','INV-0146','INV-0147','INV-0148','INV-0149']
@@ -53,7 +58,37 @@ function loadLS(key, fallback) {
   } catch { return fallback }
 }
 
-export default function App() {
+// ── Auth-gated shell ──────────────────────────────────────────────────────────
+function AuthGate() {
+  const { user, loading, signOut } = useAuth()
+  const [authView, setAuthView] = useState('login') // 'login' | 'register' | 'forgot'
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg, #0f172a)', gap: 16,
+      }}>
+        <svg viewBox="0 0 24 24" width="40" height="40">
+          <rect x="2" y="2" width="20" height="20" rx="6" fill="#1D9E75" />
+          <path d="M8 16V8h4.2c1.7 0 2.8.9 2.8 2.3 0 1-.6 1.7-1.5 1.9 1.1.2 1.8 1 1.8 2.1 0 1.5-1.1 2.4-2.9 2.4H8zm2-4.8h1.8c.7 0 1.2-.3 1.2-1s-.5-1-1.2-1H10v2zm0 3.2h1.9c.8 0 1.3-.4 1.3-1.1s-.5-1.1-1.3-1.1H10v2.2z" fill="#fff" />
+        </svg>
+        <div style={{ color: '#64748b', fontSize: 14 }}>Cargando Brava…</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    if (authView === 'register') return <RegisterView onGoLogin={() => setAuthView('login')} />
+    if (authView === 'forgot')   return <ForgotPasswordView onGoLogin={() => setAuthView('login')} />
+    return <LoginView onGoRegister={() => setAuthView('register')} onGoForgot={() => setAuthView('forgot')} />
+  }
+
+  return <Dashboard signOut={signOut} userEmail={user.email} />
+}
+
+function Dashboard({ signOut, userEmail } = {}) {
   const [dark, setDark] = useState(loadDark)
   const [view, setView] = useState('overview')
   const [modalOpen, setModalOpen] = useState(false)
@@ -151,6 +186,77 @@ export default function App() {
     localStorage.setItem('brava:dark', dark ? '1' : '0')
   }, [dark])
 
+  // ── Load data from Supabase on mount (when user is authenticated) ──────────
+  useEffect(() => {
+    if (!userEmail) return  // no session → keep localStorage data
+
+    async function loadFromSupabase() {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+      if (!userId) return
+
+      // Helper: fetch table, map local_id → id for compatibility
+      async function fetch(table) {
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+        if (error) { console.error(`[sb] fetch ${table}:`, error.message); return null }
+        // Map local_id back to id so existing React state / components work unchanged
+        return (data || []).map(row => {
+          const { local_id, user_id, created_at, ...rest } = row
+          return local_id ? { ...rest, id: local_id } : rest
+        })
+      }
+
+      const [
+        sbInvoices, sbClients, sbQuotes, sbBills,
+        sbVarExp, sbGoals, sbCashflow, sbFixedIncome, sbAccounts,
+      ] = await Promise.all([
+        fetch('invoices'), fetch('clients'), fetch('quotes'), fetch('bills'),
+        fetch('variable_expenses'), fetch('goals'), fetch('cashflow'),
+        fetch('fixed_income'), fetch('accounts'),
+      ])
+
+      // Only override state if Supabase returned rows (don't wipe localStorage data)
+      if (sbInvoices?.length)    setInvoices(sbInvoices)
+      if (sbClients?.length)     setClients(sbClients)
+      if (sbQuotes?.length)      setQuotes(sbQuotes)
+      if (sbBills?.length)       setBills(sbBills)
+      if (sbVarExp?.length)      setVariableExpenses(sbVarExp)
+      if (sbGoals?.length)       setGoals(sbGoals)
+      if (sbCashflow?.length)    setCashflow(sbCashflow)
+      if (sbFixedIncome?.length) setFixedIncome(sbFixedIncome)
+      if (sbAccounts?.length)    setAccounts(sbAccounts)
+    }
+
+    loadFromSupabase()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail])
+
+  // ── Fire-and-forget Supabase write helper ─────────────────────────────────
+  const sbWrite = useCallback(async (table, operation, payload, matchId) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id
+    if (!userId) return
+
+    if (operation === 'insert') {
+      const { id: localId, ...rest } = payload
+      await supabase.from(table).insert({ ...rest, user_id: userId, local_id: localId })
+        .then(({ error }) => error && console.error(`[sb] insert ${table}:`, error.message))
+    } else if (operation === 'update') {
+      const { id: localId, ...rest } = payload
+      await supabase.from(table).update({ ...rest, user_id: userId })
+        .eq('user_id', userId).eq('local_id', localId)
+        .then(({ error }) => error && console.error(`[sb] update ${table}:`, error.message))
+    } else if (operation === 'delete') {
+      await supabase.from(table).delete()
+        .eq('user_id', userId).eq('local_id', matchId)
+        .then(({ error }) => error && console.error(`[sb] delete ${table}:`, error.message))
+    }
+  }, [])
+
   useEffect(() => { localStorage.setItem('brava:invoices',    JSON.stringify(invoices))    }, [invoices])
   useEffect(() => { localStorage.setItem('brava:bills',       JSON.stringify(bills))       }, [bills])
   useEffect(() => { localStorage.setItem('brava:fixedIncome', JSON.stringify(fixedIncome)) }, [fixedIncome])
@@ -171,35 +277,47 @@ export default function App() {
     setView('overview')
   }
 
-  const markPaid   = (id) => setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid' }    : i))
-  const markUndo   = (id) => setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'pending' } : i))
-  const deleteInv  = (id) => setInvoices(invs => invs.filter(i => i.id !== id))
+  const markPaid = (id) => {
+    setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'paid' } : i))
+    sbWrite('invoices', 'update', { id, status: 'paid' }, id)
+  }
+  const markUndo = (id) => {
+    setInvoices(invs => invs.map(i => i.id === id ? { ...i, status: 'pending' } : i))
+    sbWrite('invoices', 'update', { id, status: 'pending' }, id)
+  }
+  const deleteInv = (id) => {
+    setInvoices(invs => invs.filter(i => i.id !== id))
+    sbWrite('invoices', 'delete', null, id)
+  }
 
   // Bills CRUD
-  const addBill    = (b) => setBills(bs => [...bs, b])
-  const editBill   = (b) => setBills(bs => bs.map(x => x.id === b.id ? b : x))
-  const deleteBill = (id) => setBills(bs => bs.filter(x => x.id !== id))
+  const addBill    = (b) => { setBills(bs => [...bs, b]); sbWrite('bills', 'insert', b) }
+  const editBill   = (b) => { setBills(bs => bs.map(x => x.id === b.id ? b : x)); sbWrite('bills', 'update', b) }
+  const deleteBill = (id) => { setBills(bs => bs.filter(x => x.id !== id)); sbWrite('bills', 'delete', null, id) }
 
   // Fixed income CRUD
-  const addIncome    = (inc) => setFixedIncome(list => [...list, inc])
-  const editIncome   = (inc) => setFixedIncome(list => list.map(x => x.id === inc.id ? inc : x))
-  const deleteIncome = (id)  => setFixedIncome(list => list.filter(x => x.id !== id))
+  const addIncome    = (inc) => { setFixedIncome(list => [...list, inc]); sbWrite('fixed_income', 'insert', inc) }
+  const editIncome   = (inc) => { setFixedIncome(list => list.map(x => x.id === inc.id ? inc : x)); sbWrite('fixed_income', 'update', inc) }
+  const deleteIncome = (id)  => { setFixedIncome(list => list.filter(x => x.id !== id)); sbWrite('fixed_income', 'delete', null, id) }
 
   // Cashflow CRUD
-  const addCashflow    = (cf) => setCashflow(list => [...list, cf])
-  const editCashflow   = (cf) => setCashflow(list => list.map(x => x.id === cf.id ? cf : x))
-  const deleteCashflow = (id) => setCashflow(list => list.filter(x => x.id !== id))
+  const addCashflow    = (cf) => { setCashflow(list => [...list, cf]); sbWrite('cashflow', 'insert', cf) }
+  const editCashflow   = (cf) => { setCashflow(list => list.map(x => x.id === cf.id ? cf : x)); sbWrite('cashflow', 'update', cf) }
+  const deleteCashflow = (id) => { setCashflow(list => list.filter(x => x.id !== id)); sbWrite('cashflow', 'delete', null, id) }
 
   // Goals CRUD
-  const addGoal    = (g) => setGoals(gs => [...gs, g])
-  const editGoal   = (g) => setGoals(gs => gs.map(x => x.id === g.id ? g : x))
-  const deleteGoal = (id) => setGoals(gs => gs.filter(x => x.id !== id))
-  const aportar    = (id, newCurrent) => setGoals(gs => gs.map(x => x.id === id ? { ...x, current: newCurrent } : x))
+  const addGoal    = (g)  => { setGoals(gs => [...gs, g]); sbWrite('goals', 'insert', g) }
+  const editGoal   = (g)  => { setGoals(gs => gs.map(x => x.id === g.id ? g : x)); sbWrite('goals', 'update', g) }
+  const deleteGoal = (id) => { setGoals(gs => gs.filter(x => x.id !== id)); sbWrite('goals', 'delete', null, id) }
+  const aportar    = (id, newCurrent) => {
+    setGoals(gs => gs.map(x => x.id === id ? { ...x, current: newCurrent } : x))
+    sbWrite('goals', 'update', { id, current: newCurrent })
+  }
 
   // Clients CRUD
-  const addClient    = (c) => setClients(cs => [...cs, c])
-  const editClient   = (c) => setClients(cs => cs.map(x => x.id === c.id ? c : x))
-  const deleteClient = (id) => setClients(cs => cs.filter(x => x.id !== id))
+  const addClient    = (c) => { setClients(cs => [...cs, c]); sbWrite('clients', 'insert', c) }
+  const editClient   = (c) => { setClients(cs => cs.map(x => x.id === c.id ? c : x)); sbWrite('clients', 'update', c) }
+  const deleteClient = (id) => { setClients(cs => cs.filter(x => x.id !== id)); sbWrite('clients', 'delete', null, id) }
 
   // Accounts CRUD
   const addAccount    = (a) => setAccounts(as => [...as, a])
@@ -228,15 +346,15 @@ export default function App() {
   const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
 
   // Variable expenses CRUD
-  const addVariableExpense    = (e) => setVariableExpenses(es => [e, ...es])
-  const editVariableExpense   = (e) => setVariableExpenses(es => es.map(x => x.id === e.id ? e : x))
-  const deleteVariableExpense = (id) => setVariableExpenses(es => es.filter(x => x.id !== id))
+  const addVariableExpense    = (e) => { setVariableExpenses(es => [e, ...es]); sbWrite('variable_expenses', 'insert', e) }
+  const editVariableExpense   = (e) => { setVariableExpenses(es => es.map(x => x.id === e.id ? e : x)); sbWrite('variable_expenses', 'update', e) }
+  const deleteVariableExpense = (id) => { setVariableExpenses(es => es.filter(x => x.id !== id)); sbWrite('variable_expenses', 'delete', null, id) }
 
   // Quotes CRUD
-  const addQuote          = (q) => setQuotes(qs => [q, ...qs])
-  const editQuote         = (q) => setQuotes(qs => qs.map(x => x.id === q.id ? q : x))
-  const deleteQuote       = (id) => setQuotes(qs => qs.filter(x => x.id !== id))
-  const changeQuoteStatus = (id, status) => setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x))
+  const addQuote          = (q) => { setQuotes(qs => [q, ...qs]); sbWrite('quotes', 'insert', q) }
+  const editQuote         = (q) => { setQuotes(qs => qs.map(x => x.id === q.id ? q : x)); sbWrite('quotes', 'update', q) }
+  const deleteQuote       = (id) => { setQuotes(qs => qs.filter(x => x.id !== id)); sbWrite('quotes', 'delete', null, id) }
+  const changeQuoteStatus = (id, status) => { setQuotes(qs => qs.map(x => x.id === id ? { ...x, status } : x)); sbWrite('quotes', 'update', { id, status }) }
 
   // Convert accepted quote → invoice (with tax auto-sync)
   function addInvoiceFromQuote(quote) {
@@ -291,6 +409,7 @@ export default function App() {
 
   const createInvoice = (inv) => {
     setInvoices(invs => [inv, ...invs])
+    sbWrite('invoices', 'insert', inv)
 
     // Auto-sync to taxes based on docType
     const d = new Date()
@@ -373,6 +492,8 @@ export default function App() {
         initials={initials}
         displayName={displayName}
         displayRole={displayRole}
+        onSignOut={signOut}
+        userEmail={userEmail}
       />
 
       <main className="main">
@@ -525,3 +646,6 @@ export default function App() {
     </div>
   )
 }
+
+// AuthGate is the real entry point — exported as default
+export default AuthGate
