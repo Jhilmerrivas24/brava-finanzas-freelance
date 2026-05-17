@@ -406,23 +406,31 @@ function Dashboard({ signOut, userEmail } = {}) {
       }
 
       // Load settings from profiles table (profiles.id = auth.uid())
-      const { data: profileRow } = await supabase
+      const { data: profileRow, error: profileErr } = await supabase
         .from('profiles')
-        .select('settings')
+        .select('settings, monthly_checks')
         .eq('id', userId)
         .single()
+      if (profileErr) console.error('[sb] profiles fetch error:', profileErr.message, profileErr)
       if (profileRow?.settings && Object.keys(profileRow.settings).length > 0) {
         const merged = { ...DEFAULT_SETTINGS, ...profileRow.settings }
         setSettings(merged)
         localStorage.setItem('brava:settings', JSON.stringify(merged))
+        console.log('[sb] settings loaded from Supabase ✓', merged.name)
       } else {
         // Migrate local settings up to Supabase
         const localSettings = loadSettings()
         if (localSettings.name) {
-          supabase.from('profiles')
+          const { error: upsertErr } = await supabase.from('profiles')
             .upsert({ id: userId, settings: localSettings }, { onConflict: 'id' })
-            .then(({ error }) => error && console.warn('[sb] migrate settings:', error.message))
+          if (upsertErr) console.warn('[sb] migrate settings error:', upsertErr.message)
+          else console.log('[sb] local settings migrated to Supabase ✓')
         }
+      }
+      // Load monthlyChecks from profiles (already fetched above)
+      if (profileRow?.monthly_checks && Object.keys(profileRow.monthly_checks).length > 0) {
+        setMonthlyChecks(profileRow.monthly_checks)
+        localStorage.setItem('brava:monthlyChecks', JSON.stringify(profileRow.monthly_checks))
       }
 
       await Promise.all([
@@ -445,20 +453,6 @@ function Dashboard({ signOut, userEmail } = {}) {
         mergeOrMigrate(sbTaxPurchases,    setTaxPurchases,      'brava:taxPurchases',     'tax_purchases'),
       ])
 
-      // Sync monthlyChecks (object, not array) via profiles table
-      const { data: checksRow } = await supabase
-        .from('profiles').select('monthly_checks').eq('id', userId).single()
-      if (checksRow?.monthly_checks && Object.keys(checksRow.monthly_checks).length > 0) {
-        setMonthlyChecks(checksRow.monthly_checks)
-        localStorage.setItem('brava:monthlyChecks', JSON.stringify(checksRow.monthly_checks))
-      } else {
-        const localChecks = loadLS('brava:monthlyChecks', {})
-        if (Object.keys(localChecks).length > 0) {
-          supabase.from('profiles')
-            .upsert({ id: userId, monthly_checks: localChecks }, { onConflict: 'id' })
-            .then(({ error }) => error && console.warn('[sb] migrate monthlyChecks:', error.message))
-        }
-      }
     }
 
     loadFromSupabase()
@@ -527,17 +521,20 @@ function Dashboard({ signOut, userEmail } = {}) {
   useEffect(() => { localStorage.setItem('brava:quotes',           JSON.stringify(quotes))           }, [quotes])
   useEffect(() => { localStorage.setItem('brava:variableExpenses', JSON.stringify(variableExpenses)) }, [variableExpenses])
 
-  function handleSaveSettings(newSettings) {
+  async function handleSaveSettings(newSettings) {
     setSettings(newSettings)
     localStorage.setItem('brava:settings', JSON.stringify(newSettings))
     // Sync settings to Supabase profiles table
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
       const userId = session?.user?.id
-      if (!userId) return
-      supabase.from('profiles')
-        .upsert({ id: userId, settings: newSettings }, { onConflict: 'id' })
-        .then(({ error }) => error && console.error('[sb] settings upsert:', error.message))
-    })
+      if (userId) {
+        const { error } = await supabase.from('profiles')
+          .upsert({ id: userId, settings: newSettings }, { onConflict: 'id' })
+        if (error) console.error('[sb] settings upsert:', error.message, error)
+        else console.log('[sb] settings saved to Supabase ✓')
+      }
+    } catch (e) { console.error('[sb] settings sync error:', e) }
     setView('overview')
     toast.success('Configuración guardada ✓')
   }
