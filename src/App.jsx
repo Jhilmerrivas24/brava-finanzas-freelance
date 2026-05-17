@@ -345,6 +345,7 @@ function Dashboard({ signOut, userEmail } = {}) {
       const JSONB_TABLES = new Set([
         'invoices','clients','quotes','bills',
         'variable_expenses','goals','cashflow','fixed_income',
+        'credit_lines','loans','loan_payments','account_movements',
       ])
 
       // Helper: fetch table, map local_id → id for compatibility
@@ -366,10 +367,12 @@ function Dashboard({ signOut, userEmail } = {}) {
       const [
         sbInvoices, sbClients, sbQuotes, sbBills,
         sbVarExp, sbGoals, sbCashflow, sbFixedIncome, sbAccounts,
+        sbCreditLines, sbLoans, sbLoanPayments, sbAccountMovements,
       ] = await Promise.all([
         fetch('invoices'), fetch('clients'), fetch('quotes'), fetch('bills'),
         fetch('variable_expenses'), fetch('goals'), fetch('cashflow'),
         fetch('fixed_income'), fetch('accounts'),
+        fetch('credit_lines'), fetch('loans'), fetch('loan_payments'), fetch('account_movements'),
       ])
 
       // Smart merge: if Supabase has rows → use them (source of truth).
@@ -420,15 +423,19 @@ function Dashboard({ signOut, userEmail } = {}) {
       }
 
       await Promise.all([
-        mergeOrMigrate(sbInvoices,    setInvoices,          'brava:invoices',         'invoices'),
-        mergeOrMigrate(sbClients,     setClients,           'brava:clients',          'clients'),
-        mergeOrMigrate(sbQuotes,      setQuotes,            'brava:quotes',           'quotes'),
-        mergeOrMigrate(sbBills,       setBills,             'brava:bills',            'bills'),
-        mergeOrMigrate(sbVarExp,      setVariableExpenses,  'brava:variableExpenses', 'variable_expenses'),
-        mergeOrMigrate(sbGoals,       setGoals,             'brava:goals',            'goals'),
-        mergeOrMigrate(sbCashflow,    setCashflow,          'brava:cashflow',         'cashflow'),
-        mergeOrMigrate(sbFixedIncome, setFixedIncome,       'brava:fixedIncome',      'fixed_income'),
-        mergeOrMigrate(sbAccounts,    setAccounts,          'brava:accounts',         'accounts'),
+        mergeOrMigrate(sbInvoices,        setInvoices,          'brava:invoices',         'invoices'),
+        mergeOrMigrate(sbClients,         setClients,           'brava:clients',          'clients'),
+        mergeOrMigrate(sbQuotes,          setQuotes,            'brava:quotes',           'quotes'),
+        mergeOrMigrate(sbBills,           setBills,             'brava:bills',            'bills'),
+        mergeOrMigrate(sbVarExp,          setVariableExpenses,  'brava:variableExpenses', 'variable_expenses'),
+        mergeOrMigrate(sbGoals,           setGoals,             'brava:goals',            'goals'),
+        mergeOrMigrate(sbCashflow,        setCashflow,          'brava:cashflow',         'cashflow'),
+        mergeOrMigrate(sbFixedIncome,     setFixedIncome,       'brava:fixedIncome',      'fixed_income'),
+        mergeOrMigrate(sbAccounts,        setAccounts,          'brava:accounts',         'accounts'),
+        mergeOrMigrate(sbCreditLines,     setCreditLines,       'brava:creditLines',      'credit_lines'),
+        mergeOrMigrate(sbLoans,           setLoans,             'brava:loans',            'loans'),
+        mergeOrMigrate(sbLoanPayments,    setLoanPayments,      'brava:loanPayments',     'loan_payments'),
+        mergeOrMigrate(sbAccountMovements,setAccountMovements,  'brava:accountMovements', 'account_movements'),
       ])
     }
 
@@ -440,6 +447,7 @@ function Dashboard({ signOut, userEmail } = {}) {
   const JSONB_TABLES = new Set([
     'invoices','clients','quotes','bills',
     'variable_expenses','goals','cashflow','fixed_income',
+    'credit_lines','loans','loan_payments','account_movements',
   ])
 
   // ── Fire-and-forget Supabase write helper ─────────────────────────────────
