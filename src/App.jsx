@@ -405,11 +405,11 @@ function Dashboard({ signOut, userEmail } = {}) {
         // Keep local state unchanged (setter not called — React already has localData from useState init)
       }
 
-      // Load settings from profiles table
+      // Load settings from profiles table (profiles.id = auth.uid())
       const { data: profileRow } = await supabase
         .from('profiles')
         .select('settings')
-        .eq('user_id', userId)
+        .eq('id', userId)
         .single()
       if (profileRow?.settings && Object.keys(profileRow.settings).length > 0) {
         const merged = { ...DEFAULT_SETTINGS, ...profileRow.settings }
@@ -420,7 +420,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         const localSettings = loadSettings()
         if (localSettings.name) {
           supabase.from('profiles')
-            .upsert({ user_id: userId, settings: localSettings }, { onConflict: 'user_id' })
+            .upsert({ id: userId, settings: localSettings }, { onConflict: 'id' })
             .then(({ error }) => error && console.warn('[sb] migrate settings:', error.message))
         }
       }
@@ -447,7 +447,7 @@ function Dashboard({ signOut, userEmail } = {}) {
 
       // Sync monthlyChecks (object, not array) via profiles table
       const { data: checksRow } = await supabase
-        .from('profiles').select('monthly_checks').eq('user_id', userId).single()
+        .from('profiles').select('monthly_checks').eq('id', userId).single()
       if (checksRow?.monthly_checks && Object.keys(checksRow.monthly_checks).length > 0) {
         setMonthlyChecks(checksRow.monthly_checks)
         localStorage.setItem('brava:monthlyChecks', JSON.stringify(checksRow.monthly_checks))
@@ -455,7 +455,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         const localChecks = loadLS('brava:monthlyChecks', {})
         if (Object.keys(localChecks).length > 0) {
           supabase.from('profiles')
-            .upsert({ user_id: userId, monthly_checks: localChecks }, { onConflict: 'user_id' })
+            .upsert({ id: userId, monthly_checks: localChecks }, { onConflict: 'id' })
             .then(({ error }) => error && console.warn('[sb] migrate monthlyChecks:', error.message))
         }
       }
@@ -535,7 +535,7 @@ function Dashboard({ signOut, userEmail } = {}) {
       const userId = session?.user?.id
       if (!userId) return
       supabase.from('profiles')
-        .upsert({ user_id: userId, settings: newSettings }, { onConflict: 'user_id' })
+        .upsert({ id: userId, settings: newSettings }, { onConflict: 'id' })
         .then(({ error }) => error && console.error('[sb] settings upsert:', error.message))
     })
     setView('overview')
@@ -706,7 +706,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         const userId = session?.user?.id
         if (!userId) return
         supabase.from('profiles')
-          .upsert({ user_id: userId, monthly_checks: updated }, { onConflict: 'user_id' })
+          .upsert({ id: userId, monthly_checks: updated }, { onConflict: 'id' })
           .then(({ error }) => error && console.error('[sb] monthlyChecks sync:', error.message))
       })
       return updated
