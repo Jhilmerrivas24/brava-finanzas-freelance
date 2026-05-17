@@ -341,16 +341,23 @@ function Dashboard({ signOut, userEmail } = {}) {
       const userId = session?.user?.id
       if (!userId) return
 
+      // Tables that use a JSONB `data` column (schema-agnostic, camelCase safe)
+      const JSONB_TABLES = new Set([
+        'invoices','clients','quotes','bills',
+        'variable_expenses','goals','cashflow','fixed_income',
+      ])
+
       // Helper: fetch table, map local_id → id for compatibility
       async function fetch(table) {
+        const isJsonb = JSONB_TABLES.has(table)
         const { data, error } = await supabase
           .from(table)
-          .select('*')
+          .select(isJsonb ? 'local_id, data' : '*')
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
         if (error) { console.error(`[sb] fetch ${table}:`, error.message); return null }
-        // Map local_id back to id so existing React state / components work unchanged
         return (data || []).map(row => {
+          if (isJsonb) return { ...(row.data || {}), id: row.local_id }
           const { local_id, user_id, created_at, ...rest } = row
           return local_id ? { ...rest, id: local_id } : rest
         })
@@ -379,10 +386,14 @@ function Dashboard({ signOut, userEmail } = {}) {
         const localData = loadLS(localKey, [])
         if (!Array.isArray(localData) || localData.length === 0) return  // nothing to migrate
         // Migrate each local row up to Supabase (fire-and-forget)
+        const isJsonb = JSONB_TABLES.has(table)
         for (const item of localData) {
           const { id: localId, ...rest } = item
+          const row = isJsonb
+            ? { user_id: userId, local_id: localId, data: rest }
+            : { ...rest, user_id: userId, local_id: localId }
           supabase.from(table)
-            .insert({ ...rest, user_id: userId, local_id: localId })
+            .insert(row)
             .then(({ error }) => error && console.warn(`[sb] migrate ${table}:`, error.message))
         }
         // Keep local state unchanged (setter not called — React already has localData from useState init)
@@ -405,26 +416,45 @@ function Dashboard({ signOut, userEmail } = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userEmail])
 
+  // Tables using JSONB `data` column (same set as in loadFromSupabase)
+  const JSONB_TABLES = new Set([
+    'invoices','clients','quotes','bills',
+    'variable_expenses','goals','cashflow','fixed_income',
+  ])
+
   // ── Fire-and-forget Supabase write helper ─────────────────────────────────
   const sbWrite = useCallback(async (table, operation, payload, matchId) => {
     const { data: { session } } = await supabase.auth.getSession()
     const userId = session?.user?.id
     if (!userId) return
 
+    const isJsonb = JSONB_TABLES.has(table)
+
     if (operation === 'insert') {
       const { id: localId, ...rest } = payload
-      await supabase.from(table).insert({ ...rest, user_id: userId, local_id: localId })
+      const row = isJsonb
+        ? { user_id: userId, local_id: localId, data: rest }
+        : { ...rest, user_id: userId, local_id: localId }
+      await supabase.from(table).insert(row)
         .then(({ error }) => error && console.error(`[sb] insert ${table}:`, error.message))
     } else if (operation === 'update') {
-      const { id: localId, ...rest } = payload
-      await supabase.from(table).update({ ...rest, user_id: userId })
-        .eq('user_id', userId).eq('local_id', localId)
-        .then(({ error }) => error && console.error(`[sb] update ${table}:`, error.message))
+      const { id: localId, ...patch } = payload
+      if (isJsonb) {
+        // Merge patch into existing JSONB data via RPC
+        await supabase.rpc('sb_patch_data', {
+          p_table: table, p_user_id: userId, p_local_id: localId, p_patch: patch,
+        }).then(({ error }) => error && console.error(`[sb] update ${table}:`, error.message))
+      } else {
+        await supabase.from(table).update({ ...patch, user_id: userId })
+          .eq('user_id', userId).eq('local_id', localId)
+          .then(({ error }) => error && console.error(`[sb] update ${table}:`, error.message))
+      }
     } else if (operation === 'delete') {
       await supabase.from(table).delete()
         .eq('user_id', userId).eq('local_id', matchId)
         .then(({ error }) => error && console.error(`[sb] delete ${table}:`, error.message))
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => { localStorage.setItem('brava:invoices',    JSON.stringify(invoices))    }, [invoices])
