@@ -483,7 +483,7 @@ export default function PaymentsView({
           </div>
 
           {/* Amounts */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <div className="payments-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             {[
               { label: 'Total del mes', value: total,    color: 'var(--ink)' },
               { label: 'Pagado',        value: paidTotal, color: 'var(--good)' },

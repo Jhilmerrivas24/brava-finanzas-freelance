@@ -238,7 +238,7 @@ function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variab
           <h3 className="card-title">Tu sueldo real</h3>
         </div>
       </div>
-      <div style={{
+      <div className="real-salary-grid" style={{
         display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:0,
         border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:12,
       }}>
@@ -896,7 +896,7 @@ export default function Overview({
                 <h3 className="card-title">Posición neta</h3>
               </div>
             </div>
-            <div style={{
+            <div className="net-position-grid" style={{
               display:'grid', gridTemplateColumns:`repeat(${cols.length},1fr)`, gap:0,
               border:'1px solid var(--border)', borderRadius:10, overflow:'hidden',
             }}>

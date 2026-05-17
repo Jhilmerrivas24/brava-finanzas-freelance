@@ -1652,3 +1652,160 @@ input, select { font-family: inherit; }
   .goal-card-stats { grid-template-columns: 1fr 1fr; }
   .client-card-stats { grid-template-columns: 1fr 1fr; }
 }
+
+/* ─────────────────────────────────────────────────────
+   RESPONSIVE — New views (AccountsView, CreditLinesView,
+   LoansView, PaymentsView, Overview additions)
+───────────────────────────────────────────────────── */
+
+/* ── Sueldo Real grid (4 cols desktop → 2 tablet → 1 mobile) ── */
+@media (max-width: 768px) {
+  .real-salary-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .real-salary-grid > div {
+    border-top: 1px solid var(--border);
+  }
+  .real-salary-grid > div:first-child,
+  .real-salary-grid > div:nth-child(2) {
+    border-top: none;
+  }
+}
+@media (max-width: 480px) {
+  .real-salary-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .real-salary-grid > div {
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .real-salary-grid > div:first-child { border-top: none; }
+}
+
+/* ── Net position grid (3 cols → 1 col mobile) ── */
+@media (max-width: 600px) {
+  .net-position-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .net-position-grid > div {
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .net-position-grid > div:first-child { border-top: none; }
+}
+
+/* ── Payments summary grid (3 cols → 1 col mobile) ── */
+@media (max-width: 600px) {
+  .payments-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .payments-summary-grid > div {
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .payments-summary-grid > div:first-child { border-top: none; }
+}
+
+/* ── AccountsView / CreditLinesView / LoansView cards ── */
+@media (max-width: 480px) {
+  /* Force single column for small auto-fill grids */
+  [style*="minmax(260px"], [style*="minmax(280px"], [style*="minmax(300px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── PaymentsView item row ── */
+@media (max-width: 768px) {
+  /* Payment item action buttons wrap on small screens */
+  .payment-item-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+/* ── LoansView loan card 2-col details ── */
+@media (max-width: 480px) {
+  [style*="gridTemplateColumns: '1fr 1fr'"],
+  [style*='gridTemplateColumns: "1fr 1fr"'] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Overview: Alert panel ── */
+@media (max-width: 768px) {
+  /* Alert items stack nicely already via flex-direction:column */
+  .alert-panel-section { margin-bottom: 12px; }
+}
+
+/* ── Overview: Historical nav bar ── */
+@media (max-width: 480px) {
+  /* Month nav buttons get smaller */
+  .month-nav-btn { padding: 6px 10px !important; font-size: 12px !important; }
+}
+
+/* ── Tax view table horizontal scroll ── */
+@media (max-width: 768px) {
+  .tax-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tax-table-wrap table { min-width: 520px; }
+}
+
+/* ── Modal forms: field-row flex → single col ── */
+@media (max-width: 600px) {
+  /* Flex-based field rows (AccountsView, CreditLinesView modals) */
+  .modal-body .field-row,
+  .modal-body > div[style*="display: flex"][style*="gap"] {
+    flex-direction: column !important;
+  }
+}
+
+/* ── Topbar: tighter on very small screens ── */
+@media (max-width: 360px) {
+  .topbar { padding: 8px 10px; gap: 8px; }
+  .topbar-brand-mobile { font-size: 14px; }
+  .hamburger-btn { width: 36px; height: 36px; }
+}
+
+/* ── Sidebar: narrower on very small screens ── */
+@media (max-width: 360px) {
+  .sidebar { width: 260px; }
+}
+
+/* ── View header buttons: full width on mobile ── */
+@media (max-width: 480px) {
+  .view-header-actions { gap: 6px; }
+  .view-header-actions .btn { font-size: 13px; padding: 10px 12px; }
+}
+
+/* ── KPI row: ensure 2 columns minimum on ≥480px ── */
+@media (min-width: 481px) and (max-width: 768px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Tabs: scroll horizontally on overflow ── */
+@media (max-width: 768px) {
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; flex-shrink: 0; }
+}
+
+/* ── Cards: remove heavy padding on mobile ── */
+@media (max-width: 480px) {
+  .card { padding: 14px; }
+  .card-head { padding-bottom: 10px; }
+}
+
+/* ── Invoice table: make columns fit better ── */
+@media (max-width: 768px) {
+  .invoice-table th:nth-child(4),
+  .invoice-table td:nth-child(4) { display: none; } /* hide "Emitida" col */
+}
+
+/* ── Bottom safe area for iOS ── */
+@media (max-width: 768px) {
+  .view { padding-bottom: max(80px, env(safe-area-inset-bottom, 80px)); }
+}
