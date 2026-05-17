@@ -5,10 +5,9 @@ import { fmtPEN } from '../data.js'
 const COLORS = ['#c2410c','#15803d','#1d4ed8','#7c3aed','#0f766e','#a16207','#be185d','#0e7490']
 
 const DOC_TYPES = [
-  { value: 'factura',      label: 'Factura',      hint: 'Va a SUNAT'  },
-  { value: 'rh',           label: 'RH',           hint: 'Honorarios'  },
-  { value: 'boleta',       label: 'Boleta',       hint: '100% líquido'},
-  { value: 'sin_declarar', label: 'Sin declarar', hint: 'No a SUNAT'  },
+  { value: 'factura', label: 'Factura', hint: 'Va a SUNAT'  },
+  { value: 'rh',      label: 'RH',     hint: 'Honorarios'  },
+  { value: 'boleta',  label: 'Boleta', hint: '100% líquido'},
 ]
 
 export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, clients }) {
@@ -361,7 +360,7 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
           {/* ── Preview ──────────────────────────────────────────────────── */}
           <div className="invoice-preview">
             <div className="invoice-preview-head">
-              <div className="ink-mute">Vista previa · {docType === 'rh' ? 'RH' : docType === 'sin_declarar' || docType === 'boleta' ? 'Sin declarar' : 'Factura'}</div>
+              <div className="ink-mute">Vista previa · {docType === 'rh' ? 'RH' : docType === 'sin_declarar' || docType === 'boleta' ? 'Boleta' : 'Factura'}</div>
               <div className="mono ink-mute">{serie ? `${serie}-` : ''}{number || nextId}</div>
             </div>
             <div className="invoice-preview-body">
