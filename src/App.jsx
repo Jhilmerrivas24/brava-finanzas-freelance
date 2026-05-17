@@ -399,6 +399,26 @@ function Dashboard({ signOut, userEmail } = {}) {
         // Keep local state unchanged (setter not called — React already has localData from useState init)
       }
 
+      // Load settings from profiles table
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('settings')
+        .eq('user_id', userId)
+        .single()
+      if (profileRow?.settings && Object.keys(profileRow.settings).length > 0) {
+        const merged = { ...DEFAULT_SETTINGS, ...profileRow.settings }
+        setSettings(merged)
+        localStorage.setItem('brava:settings', JSON.stringify(merged))
+      } else {
+        // Migrate local settings up to Supabase
+        const localSettings = loadSettings()
+        if (localSettings.name) {
+          supabase.from('profiles')
+            .upsert({ user_id: userId, settings: localSettings }, { onConflict: 'user_id' })
+            .then(({ error }) => error && console.warn('[sb] migrate settings:', error.message))
+        }
+      }
+
       await Promise.all([
         mergeOrMigrate(sbInvoices,    setInvoices,          'brava:invoices',         'invoices'),
         mergeOrMigrate(sbClients,     setClients,           'brava:clients',          'clients'),
@@ -479,6 +499,14 @@ function Dashboard({ signOut, userEmail } = {}) {
   function handleSaveSettings(newSettings) {
     setSettings(newSettings)
     localStorage.setItem('brava:settings', JSON.stringify(newSettings))
+    // Sync settings to Supabase profiles table
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const userId = session?.user?.id
+      if (!userId) return
+      supabase.from('profiles')
+        .upsert({ user_id: userId, settings: newSettings }, { onConflict: 'user_id' })
+        .then(({ error }) => error && console.error('[sb] settings upsert:', error.message))
+    })
     setView('overview')
     toast.success('Configuración guardada ✓')
   }
