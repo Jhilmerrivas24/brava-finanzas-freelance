@@ -346,6 +346,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         'invoices','clients','quotes','bills',
         'variable_expenses','goals','cashflow','fixed_income',
         'credit_lines','loans','loan_payments','account_movements',
+        'tax_periods','tax_invoices','tax_rh','tax_purchases',
       ])
 
       // Helper: fetch table, map local_id → id for compatibility
@@ -368,11 +369,13 @@ function Dashboard({ signOut, userEmail } = {}) {
         sbInvoices, sbClients, sbQuotes, sbBills,
         sbVarExp, sbGoals, sbCashflow, sbFixedIncome, sbAccounts,
         sbCreditLines, sbLoans, sbLoanPayments, sbAccountMovements,
+        sbTaxPeriods, sbTaxInvoices, sbTaxRH, sbTaxPurchases,
       ] = await Promise.all([
         fetch('invoices'), fetch('clients'), fetch('quotes'), fetch('bills'),
         fetch('variable_expenses'), fetch('goals'), fetch('cashflow'),
         fetch('fixed_income'), fetch('accounts'),
         fetch('credit_lines'), fetch('loans'), fetch('loan_payments'), fetch('account_movements'),
+        fetch('tax_periods'), fetch('tax_invoices'), fetch('tax_rh'), fetch('tax_purchases'),
       ])
 
       // Smart merge: if Supabase has rows → use them (source of truth).
@@ -436,7 +439,26 @@ function Dashboard({ signOut, userEmail } = {}) {
         mergeOrMigrate(sbLoans,           setLoans,             'brava:loans',            'loans'),
         mergeOrMigrate(sbLoanPayments,    setLoanPayments,      'brava:loanPayments',     'loan_payments'),
         mergeOrMigrate(sbAccountMovements,setAccountMovements,  'brava:accountMovements', 'account_movements'),
+        mergeOrMigrate(sbTaxPeriods,      setTaxPeriods,        'brava:taxPeriods',       'tax_periods'),
+        mergeOrMigrate(sbTaxInvoices,     setTaxInvoices,       'brava:taxInvoices',      'tax_invoices'),
+        mergeOrMigrate(sbTaxRH,           setTaxRH,             'brava:taxRH',            'tax_rh'),
+        mergeOrMigrate(sbTaxPurchases,    setTaxPurchases,      'brava:taxPurchases',     'tax_purchases'),
       ])
+
+      // Sync monthlyChecks (object, not array) via profiles table
+      const { data: checksRow } = await supabase
+        .from('profiles').select('monthly_checks').eq('user_id', userId).single()
+      if (checksRow?.monthly_checks && Object.keys(checksRow.monthly_checks).length > 0) {
+        setMonthlyChecks(checksRow.monthly_checks)
+        localStorage.setItem('brava:monthlyChecks', JSON.stringify(checksRow.monthly_checks))
+      } else {
+        const localChecks = loadLS('brava:monthlyChecks', {})
+        if (Object.keys(localChecks).length > 0) {
+          supabase.from('profiles')
+            .upsert({ user_id: userId, monthly_checks: localChecks }, { onConflict: 'user_id' })
+            .then(({ error }) => error && console.warn('[sb] migrate monthlyChecks:', error.message))
+        }
+      }
     }
 
     loadFromSupabase()
@@ -448,6 +470,7 @@ function Dashboard({ signOut, userEmail } = {}) {
     'invoices','clients','quotes','bills',
     'variable_expenses','goals','cashflow','fixed_income',
     'credit_lines','loans','loan_payments','account_movements',
+    'tax_periods','tax_invoices','tax_rh','tax_purchases',
   ])
 
   // ── Fire-and-forget Supabase write helper ─────────────────────────────────
@@ -678,30 +701,41 @@ function Dashboard({ signOut, userEmail } = {}) {
       const updated = { ...mc }
       if (paid) updated[key] = { paid: true, paidAt: new Date().toISOString().split('T')[0] }
       else      delete updated[key]
+      // Sync to Supabase profiles.monthly_checks
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const userId = session?.user?.id
+        if (!userId) return
+        supabase.from('profiles')
+          .upsert({ user_id: userId, monthly_checks: updated }, { onConflict: 'user_id' })
+          .then(({ error }) => error && console.error('[sb] monthlyChecks sync:', error.message))
+      })
       return updated
     })
   }
 
   // Tax periods
-  const updateTaxPeriod = (p) => setTaxPeriods(ps => {
-    const exists = ps.find(x => x.id === p.id)
-    return exists ? ps.map(x => x.id === p.id ? p : x) : [...ps, p]
-  })
+  const updateTaxPeriod = (p) => {
+    setTaxPeriods(ps => {
+      const exists = ps.find(x => x.id === p.id)
+      return exists ? ps.map(x => x.id === p.id ? p : x) : [...ps, p]
+    })
+    sbWrite('tax_periods', 'insert', p)  // upsert-like: insert handles new, update handles existing
+  }
 
   // Tax invoices CRUD
-  const addTaxInvoice    = (x) => setTaxInvoices(xs => [...xs, x])
-  const editTaxInvoice   = (x) => setTaxInvoices(xs => xs.map(i => i.id === x.id ? x : i))
-  const deleteTaxInvoice = (id) => setTaxInvoices(xs => xs.filter(i => i.id !== id))
+  const addTaxInvoice    = (x) => { setTaxInvoices(xs => [...xs, x]);                          sbWrite('tax_invoices', 'insert', x) }
+  const editTaxInvoice   = (x) => { setTaxInvoices(xs => xs.map(i => i.id === x.id ? x : i)); sbWrite('tax_invoices', 'update', x) }
+  const deleteTaxInvoice = (id) => { setTaxInvoices(xs => xs.filter(i => i.id !== id));        sbWrite('tax_invoices', 'delete', null, id) }
 
   // Tax RH CRUD
-  const addTaxRH    = (x) => setTaxRH(xs => [...xs, x])
-  const editTaxRH   = (x) => setTaxRH(xs => xs.map(i => i.id === x.id ? x : i))
-  const deleteTaxRH = (id) => setTaxRH(xs => xs.filter(i => i.id !== id))
+  const addTaxRH    = (x) => { setTaxRH(xs => [...xs, x]);                          sbWrite('tax_rh', 'insert', x) }
+  const editTaxRH   = (x) => { setTaxRH(xs => xs.map(i => i.id === x.id ? x : i)); sbWrite('tax_rh', 'update', x) }
+  const deleteTaxRH = (id) => { setTaxRH(xs => xs.filter(i => i.id !== id));        sbWrite('tax_rh', 'delete', null, id) }
 
   // Tax purchases CRUD
-  const addTaxPurchase    = (x) => setTaxPurchases(xs => [...xs, x])
-  const editTaxPurchase   = (x) => setTaxPurchases(xs => xs.map(i => i.id === x.id ? x : i))
-  const deleteTaxPurchase = (id) => setTaxPurchases(xs => xs.filter(i => i.id !== id))
+  const addTaxPurchase    = (x) => { setTaxPurchases(xs => [...xs, x]);                          sbWrite('tax_purchases', 'insert', x) }
+  const editTaxPurchase   = (x) => { setTaxPurchases(xs => xs.map(i => i.id === x.id ? x : i)); sbWrite('tax_purchases', 'update', x) }
+  const deleteTaxPurchase = (id) => { setTaxPurchases(xs => xs.filter(i => i.id !== id));        sbWrite('tax_purchases', 'delete', null, id) }
 
   // Variable expenses CRUD (+ credit line sync)
   const addVariableExpense = (e) => {
