@@ -365,16 +365,40 @@ function Dashboard({ signOut, userEmail } = {}) {
         fetch('fixed_income'), fetch('accounts'),
       ])
 
-      // Override state with Supabase data (including empty arrays — user may have deleted all)
-      if (Array.isArray(sbInvoices))    setInvoices(sbInvoices)
-      if (Array.isArray(sbClients))     setClients(sbClients)
-      if (Array.isArray(sbQuotes))      setQuotes(sbQuotes)
-      if (Array.isArray(sbBills))       setBills(sbBills)
-      if (Array.isArray(sbVarExp))      setVariableExpenses(sbVarExp)
-      if (Array.isArray(sbGoals))       setGoals(sbGoals)
-      if (Array.isArray(sbCashflow))    setCashflow(sbCashflow)
-      if (Array.isArray(sbFixedIncome)) setFixedIncome(sbFixedIncome)
-      if (Array.isArray(sbAccounts))    setAccounts(sbAccounts)
+      // Smart merge: if Supabase has rows → use them (source of truth).
+      // If Supabase is empty but localStorage has data → migrate local data UP to
+      // Supabase so it's available on all devices, then keep local state intact.
+      // Never wipe local data just because Supabase returned an empty array.
+      async function mergeOrMigrate(sbArr, setter, localKey, table) {
+        if (!Array.isArray(sbArr)) return          // fetch error → do nothing
+        if (sbArr.length > 0) {
+          setter(sbArr)                             // Supabase has data → use it
+          return
+        }
+        // Supabase is empty: check localStorage
+        const localData = loadLS(localKey, [])
+        if (!Array.isArray(localData) || localData.length === 0) return  // nothing to migrate
+        // Migrate each local row up to Supabase (fire-and-forget)
+        for (const item of localData) {
+          const { id: localId, ...rest } = item
+          supabase.from(table)
+            .insert({ ...rest, user_id: userId, local_id: localId })
+            .then(({ error }) => error && console.warn(`[sb] migrate ${table}:`, error.message))
+        }
+        // Keep local state unchanged (setter not called — React already has localData from useState init)
+      }
+
+      await Promise.all([
+        mergeOrMigrate(sbInvoices,    setInvoices,          'brava:invoices',         'invoices'),
+        mergeOrMigrate(sbClients,     setClients,           'brava:clients',          'clients'),
+        mergeOrMigrate(sbQuotes,      setQuotes,            'brava:quotes',           'quotes'),
+        mergeOrMigrate(sbBills,       setBills,             'brava:bills',            'bills'),
+        mergeOrMigrate(sbVarExp,      setVariableExpenses,  'brava:variableExpenses', 'variable_expenses'),
+        mergeOrMigrate(sbGoals,       setGoals,             'brava:goals',            'goals'),
+        mergeOrMigrate(sbCashflow,    setCashflow,          'brava:cashflow',         'cashflow'),
+        mergeOrMigrate(sbFixedIncome, setFixedIncome,       'brava:fixedIncome',      'fixed_income'),
+        mergeOrMigrate(sbAccounts,    setAccounts,          'brava:accounts',         'accounts'),
+      ])
     }
 
     loadFromSupabase()
