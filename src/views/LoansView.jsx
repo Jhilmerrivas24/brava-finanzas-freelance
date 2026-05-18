@@ -17,6 +17,40 @@ function daysUntilPayment(diaPago) {
   return Math.round((target - today) / 86400000)
 }
 
+// ── French amortization schedule computer ────────────────────────────────────
+function computeSchedule(monto, tcea, nCuotas, fechaPrimerPago) {
+  if (!monto || !tcea || !nCuotas) return null
+  const r = Math.pow(1 + tcea / 100, 1 / 12) - 1
+  if (r <= 0) return null
+  const cuotaFija = monto * r * Math.pow(1 + r, nCuotas) / (Math.pow(1 + r, nCuotas) - 1)
+
+  let saldo = monto
+  const schedule = []
+  let fecha = fechaPrimerPago ? new Date(fechaPrimerPago) : null
+
+  for (let n = 1; n <= nCuotas; n++) {
+    const interes  = Math.round(saldo * r * 100) / 100
+    const isLast   = n === nCuotas
+    const capital  = isLast ? Math.round(saldo * 100) / 100 : Math.round((cuotaFija - interes) * 100) / 100
+    const total    = Math.round((capital + interes) * 100) / 100
+    saldo          = Math.round(Math.max(0, saldo - capital) * 100) / 100
+
+    schedule.push({
+      n,
+      fecha: fecha ? fecha.toISOString().split('T')[0] : null,
+      capital,
+      interes,
+      total,
+    })
+
+    if (fecha) {
+      fecha = new Date(fecha)
+      fecha.setMonth(fecha.getMonth() + 1)
+    }
+  }
+  return { cuotaFija: Math.round(cuotaFija * 100) / 100, schedule }
+}
+
 // ── Loan CRUD modal ───────────────────────────────────────────────────────────
 function LoanModal({ initial, onSave, onClose }) {
   const defaults = {
@@ -26,42 +60,62 @@ function LoanModal({ initial, onSave, onClose }) {
     montoOriginal:   String(initial?.montoOriginal   ?? ''),
     totalCuotas:     String(initial?.totalCuotas     ?? ''),
     cuotasYaPagadas: String(initial?.cuotasYaPagadas ?? ''),
-    capitalPorCuota: String(initial?.capitalPorCuota ?? ''),
-    interesPorCuota: String(initial?.interesPorCuota ?? ''),
-    tasaAnual:       String(initial?.tasaAnual       ?? ''),
+    tcea:            String(initial?.tcea            ?? initial?.tasaAnual ?? ''),
+    fechaPrimerPago: initial?.fechaPrimerPago ?? '',
     fechaInicio:     initial?.fechaInicio     ?? '',
     fechaFin:        initial?.fechaFin        ?? '',
     diaPago:         String(initial?.diaPago  ?? ''),
     moneda:          initial?.moneda          ?? 'PEN',
     activo:          initial?.activo          ?? true,
   }
-  const [form, setForm] = useState(defaults)
+  const [form, setForm]       = useState(defaults)
+  const [schedule, setSchedule] = useState(initial?.schedule ?? null)
+  const [showSched, setShowSched] = useState(!!initial?.schedule)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const capital  = Number(form.capitalPorCuota) || 0
-  const interes  = Number(form.interesPorCuota) || 0
-  const cuotaTotal = capital + interes
+  const monto    = Number(form.montoOriginal) || 0
+  const nCuotas  = Number(form.totalCuotas)  || 0
+  const tcea     = Number(form.tcea)          || 0
+  const yaP      = Number(form.cuotasYaPagadas) || 0
+  const restantes = Math.max(0, nCuotas - yaP)
+  const cuotaFija = schedule ? schedule[0]?.total : null
 
-  const totalCuotas     = Number(form.totalCuotas)     || 0
-  const cuotasYaPagadas = Number(form.cuotasYaPagadas) || 0
-  const cuotasRestantes = Math.max(0, totalCuotas - cuotasYaPagadas)
+  // Saldo from schedule: sum of capital of remaining cuotas
+  const saldoFromSchedule = schedule
+    ? schedule.slice(yaP).reduce((s, r) => s + r.capital, 0)
+    : null
+  const saldoFinal = saldoFromSchedule != null
+    ? Math.round(saldoFromSchedule * 100) / 100
+    : monto
 
-  // Auto-compute saldo from capital data if available
-  const saldoAuto = capital > 0 && cuotasRestantes > 0 ? capital * cuotasRestantes : null
-  const montoOrig = Number(form.montoOriginal) || 0
-  const saldoFinal = saldoAuto ?? montoOrig
+  const pct = monto > 0 && saldoFinal <= monto
+    ? (monto - saldoFinal) / monto : 0
 
-  const pct = montoOrig > 0 && saldoFinal <= montoOrig
-    ? (montoOrig - saldoFinal) / montoOrig
-    : 0
+  const valid = form.nombre.trim() && monto > 0
+  const curr  = form.moneda === 'USD' ? 'US$' : 'S/'
 
-  const valid = form.nombre.trim() && montoOrig > 0
+  function handleAutoCompute() {
+    const result = computeSchedule(monto, tcea, nCuotas, form.fechaPrimerPago || null)
+    if (!result) return
+    setSchedule(result.schedule)
+    setShowSched(true)
+  }
 
-  const curr = form.moneda === 'USD' ? 'US$' : 'S/'
+  function updateScheduleRow(i, field, val) {
+    setSchedule(prev => {
+      const next = prev.map((r, idx) => {
+        if (idx !== i) return r
+        const updated = { ...r, [field]: Number(val) || 0 }
+        updated.total = Math.round((updated.capital + updated.interes) * 100) / 100
+        return updated
+      })
+      return next
+    })
+  }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="eyebrow">{initial ? 'Editar' : 'Registrar'} préstamo</div>
@@ -70,13 +124,14 @@ function LoanModal({ initial, onSave, onClose }) {
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
         </div>
         <div className="modal-body">
+
           {/* Name + bank */}
           <div className="field-row">
             <div className="field" style={{ flex: 2 }}>
               <label>Nombre del préstamo</label>
               <input type="text" value={form.nombre} autoFocus
                 onChange={e => set('nombre', e.target.value)}
-                placeholder="Ej. Préstamo BCP, Crédito Efectivo…"/>
+                placeholder="Ej. Préstamo MIBANCO MYPE…"/>
             </div>
             <div className="field" style={{ flex: 1 }}>
               <label>Banco / Entidad</label>
@@ -106,10 +161,10 @@ function LoanModal({ initial, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Monto + TEA */}
+          {/* Monto + TCEA + cuotas + primer pago */}
           <div className="field-row">
             <div className="field">
-              <label>Monto original del préstamo</label>
+              <label>Monto neto desembolsado</label>
               <div className="amount-input">
                 <span className="amount-prefix mono">{curr}</span>
                 <input type="text" inputMode="decimal" className="amount-field mono"
@@ -117,101 +172,157 @@ function LoanModal({ initial, onSave, onClose }) {
               </div>
             </div>
             <div className="field">
-              <label>Tasa anual — TEA (%)</label>
-              <input type="text" inputMode="decimal"
-                value={form.tasaAnual} onChange={e => set('tasaAnual', e.target.value)} placeholder="15.00"/>
+              <label>TCEA (%)</label>
+              <input type="text" inputMode="decimal" value={form.tcea}
+                onChange={e => set('tcea', e.target.value)} placeholder="Ej. 77.15"/>
             </div>
           </div>
-
-          {/* Cuota breakdown — always visible */}
-          <div style={{ background: 'var(--bg-sunk)', borderRadius: 10, padding: '14px 16px', marginBottom: 4 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)', marginBottom: 12 }}>
-              Desglose de la cuota mensual
-            </div>
-            <div className="field-row" style={{ marginBottom: 0 }}>
-              <div className="field">
-                <label>Capital por cuota</label>
-                <div className="amount-input">
-                  <span className="amount-prefix mono">{curr}</span>
-                  <input type="text" inputMode="decimal" className="amount-field mono"
-                    value={form.capitalPorCuota}
-                    onChange={e => set('capitalPorCuota', e.target.value)}
-                    placeholder="0.00"/>
-                </div>
-              </div>
-              <div className="field">
-                <label>Interés por cuota</label>
-                <div className="amount-input">
-                  <span className="amount-prefix mono">{curr}</span>
-                  <input type="text" inputMode="decimal" className="amount-field mono"
-                    value={form.interesPorCuota}
-                    onChange={e => set('interesPorCuota', e.target.value)}
-                    placeholder="0.00"/>
-                </div>
-              </div>
-              <div className="field" style={{ flex: '0 0 auto', minWidth: 110 }}>
-                <label style={{ color: 'var(--accent)' }}>Cuota total</label>
-                <div className="amount-input" style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-elev))' }}>
-                  <span className="amount-prefix mono" style={{ color: 'var(--accent)' }}>{curr}</span>
-                  <span className="amount-field mono" style={{ color: 'var(--accent)', fontWeight: 700, display: 'flex', alignItems: 'center' }}>
-                    {cuotaTotal > 0 ? cuotaTotal.toFixed(2) : '—'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Total cuotas + ya pagadas */}
           <div className="field-row">
             <div className="field">
-              <label>Total de cuotas pactadas</label>
+              <label>Total de cuotas</label>
               <input type="number" min={1} value={form.totalCuotas}
                 onChange={e => set('totalCuotas', e.target.value)} placeholder="Ej. 12"/>
             </div>
             <div className="field">
-              <label>
-                ¿Cuántas ya pagaste?{' '}
-                <span style={{ fontWeight: 400, color: 'var(--ink-faint)', fontSize: 11 }}>
-                  (para préstamos históricos)
-                </span>
-              </label>
+              <label>Fecha del primer pago</label>
+              <input type="date" value={form.fechaPrimerPago}
+                onChange={e => set('fechaPrimerPago', e.target.value)}/>
+            </div>
+            <div className="field">
+              <label>¿Cuántas ya pagaste?</label>
               <input type="number" min={0} value={form.cuotasYaPagadas}
                 onChange={e => set('cuotasYaPagadas', e.target.value)} placeholder="0"/>
             </div>
           </div>
 
-          {/* Auto-computed summary */}
-          {totalCuotas > 0 && (
+          {/* Auto-compute button */}
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-soft"
+              style={{ fontSize: 13 }}
+              disabled={!monto || !tcea || !nCuotas}
+              onClick={handleAutoCompute}
+            >
+              ⚡ Auto-calcular cronograma
+            </button>
+            {schedule && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => setShowSched(v => !v)}
+              >
+                {showSched ? '▲ Ocultar' : '▼ Ver'} cronograma ({schedule.length} cuotas)
+              </button>
+            )}
+            {!monto || !tcea || !nCuotas ? (
+              <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Completa monto, TCEA y cuotas primero</span>
+            ) : null}
+          </div>
+
+          {/* Schedule table */}
+          {schedule && showSched && (
+            <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: 'var(--bg-sunk)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)' }}>
+                  Cronograma de pagos — puedes editar cada celda
+                </span>
+                <button className="btn btn-ghost btn-xs" style={{ color: 'var(--bad)' }}
+                  onClick={() => { setSchedule(null); setShowSched(false) }}>
+                  Eliminar
+                </button>
+              </div>
+              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-sunk)', position: 'sticky', top: 0 }}>
+                      {['N°','Fecha','Capital','Interés','Cuota'].map(h => (
+                        <th key={h} style={{ padding: '6px 10px', textAlign: h === 'N°' ? 'center' : 'right', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10, textTransform: 'uppercase' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedule.map((row, i) => {
+                      const isPaid = i < yaP
+                      return (
+                        <tr key={i} style={{ background: isPaid ? 'color-mix(in srgb, var(--good) 6%, transparent)' : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '5px 10px', textAlign: 'center', color: isPaid ? 'var(--good)' : 'var(--ink-mute)', fontWeight: isPaid ? 700 : 400 }}>
+                            {isPaid ? '✓' : row.n}
+                          </td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <input type="date" value={row.fecha ?? ''} style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 120 }}
+                              onChange={e => updateScheduleRow(i, 'fecha', e.target.value)}/>
+                          </td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <input type="text" inputMode="decimal" value={row.capital} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 72, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
+                              onChange={e => updateScheduleRow(i, 'capital', e.target.value)}/>
+                          </td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <input type="text" inputMode="decimal" value={row.interes} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 72, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
+                              onChange={e => updateScheduleRow(i, 'interes', e.target.value)}/>
+                          </td>
+                          <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
+                            {fmtPEN(row.total)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg-sunk)' }}>
+                      <td colSpan={2} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--ink-mute)' }}>TOTALES</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12 }}>
+                        {fmtPEN(schedule.reduce((s, r) => s + r.capital, 0))}
+                      </td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12 }}>
+                        {fmtPEN(schedule.reduce((s, r) => s + r.interes, 0))}
+                      </td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>
+                        {fmtPEN(schedule.reduce((s, r) => s + r.total, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Summary */}
+          {(nCuotas > 0 || schedule) && (
             <div style={{
               padding: '10px 14px', borderRadius: 8, marginBottom: 4, fontSize: 12,
               background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-elev))',
               border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+              display: 'flex', gap: 20, flexWrap: 'wrap',
             }}>
-              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                <span>Cuotas pagadas: <strong style={{ color: 'var(--good)' }}>{cuotasYaPagadas}</strong></span>
-                <span>Cuotas restantes: <strong style={{ color: 'var(--bad)' }}>{cuotasRestantes}</strong></span>
-                {saldoAuto != null && (
-                  <span>Saldo estimado: <strong className="mono">{fmtPEN(saldoAuto)}</strong></span>
-                )}
-              </div>
-              {saldoAuto != null && montoOrig > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct * 100}%`, background: 'var(--accent)', borderRadius: 2 }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, color: 'var(--ink-faint)', fontSize: 10 }}>
-                    <span>Pagado {(pct*100).toFixed(0)}%</span>
-                    <span>{fmtPEN(montoOrig - saldoFinal)} de {fmtPEN(montoOrig)}</span>
-                  </div>
-                </div>
+              {nCuotas > 0 && <>
+                <span>Cuotas pagadas: <strong style={{ color: 'var(--good)' }}>{yaP}</strong></span>
+                <span>Restantes: <strong style={{ color: 'var(--bad)' }}>{restantes}</strong></span>
+              </>}
+              {cuotaFija && <span>Cuota fija: <strong className="mono">{fmtPEN(cuotaFija)}</strong></span>}
+              {saldoFromSchedule != null && (
+                <span>Saldo pendiente: <strong className="mono">{fmtPEN(saldoFinal)}</strong></span>
               )}
+            </div>
+          )}
+          {saldoFromSchedule != null && monto > 0 && (
+            <div style={{ marginBottom: 12, marginTop: 6 }}>
+              <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct * 100}%`, background: 'var(--accent)', borderRadius: 2 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
+                <span>Pagado {(pct*100).toFixed(0)}%</span>
+                <span>{fmtPEN(monto - saldoFinal)} de {fmtPEN(monto)}</span>
+              </div>
             </div>
           )}
 
           {/* Dates + pay day */}
           <div className="field-row">
             <div className="field">
-              <label>Fecha inicio</label>
+              <label>Fecha inicio préstamo</label>
               <input type="date" value={form.fechaInicio} onChange={e => set('fechaInicio', e.target.value)}/>
             </div>
             <div className="field">
@@ -230,35 +341,36 @@ function LoanModal({ initial, onSave, onClose }) {
             <span>Préstamo activo</span>
           </label>
         </div>
+
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid}
             onClick={() => {
-              const capQ   = Number(form.capitalPorCuota) || 0
-              const intQ   = Number(form.interesPorCuota) || 0
-              const totC   = Number(form.totalCuotas)     || 0
-              const yaP    = Number(form.cuotasYaPagadas) || 0
-              const restantes = Math.max(0, totC - yaP)
-              const saldoCalc = capQ > 0 && restantes > 0
-                ? capQ * restantes
-                : Number(form.montoOriginal) || 0
+              const totC  = Number(form.totalCuotas)     || 0
+              const yaP2  = Number(form.cuotasYaPagadas) || 0
+              const rest2 = Math.max(0, totC - yaP2)
+              const cuota = schedule ? (schedule[0]?.total ?? 0) : 0
+              const saldo = schedule
+                ? Math.round(schedule.slice(yaP2).reduce((s, r) => s + r.capital, 0) * 100) / 100
+                : monto
               onSave({
                 nombre:          form.nombre,
                 banco:           form.banco,
                 tipo:            form.tipo,
-                montoOriginal:   Number(form.montoOriginal)   || 0,
-                saldoPendiente:  saldoCalc,
+                montoOriginal:   monto,
+                saldoPendiente:  saldo,
                 totalCuotas:     totC,
-                cuotasYaPagadas: yaP,
-                capitalPorCuota: capQ,
-                interesPorCuota: intQ,
-                cuota:           capQ + intQ,
-                tasaAnual:       Number(form.tasaAnual)       || 0,
+                cuotasYaPagadas: yaP2,
+                cuota,
+                tcea:            Number(form.tcea) || 0,
+                tasaAnual:       Number(form.tcea) || 0,
+                fechaPrimerPago: form.fechaPrimerPago || null,
                 fechaInicio:     form.fechaInicio || null,
                 fechaFin:        form.fechaFin   || null,
                 diaPago:         Number(form.diaPago) || null,
                 moneda:          form.moneda,
                 activo:          form.activo,
+                schedule:        schedule ?? null,
               })
             }}>
             <Icon name="check" size={14}/> {initial ? 'Guardar cambios' : 'Registrar préstamo'}
@@ -271,27 +383,29 @@ function LoanModal({ initial, onSave, onClose }) {
 
 // ── Payment modal ─────────────────────────────────────────────────────────────
 function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
-  const capDef = String(loan.capitalPorCuota ?? '')
-  const intDef = String(loan.interesPorCuota ?? '')
+  // Look up this cuota's specific amounts from the schedule
+  const schedRow = loan.schedule ? loan.schedule[cuotaNum - 1] : null
+  const capDef   = schedRow ? String(schedRow.capital) : ''
+  const intDef   = schedRow ? String(schedRow.interes) : ''
+  const dateDef  = schedRow?.fecha ?? new Date().toISOString().split('T')[0]
+
   const [capital,   setCapital]   = useState(capDef)
   const [interes,   setInteres]   = useState(intDef)
-  const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
+  const [date,      setDate]      = useState(dateDef)
   const [notes,     setNotes]     = useState('')
   const [accountId, setAccountId] = useState(null)
 
-  const capNum = Number(capital)  || 0
+  const capNum = Number(capital) || 0
   const intNum = Number(interes) || 0
   const total  = capNum + intNum || Number(loan.cuota ?? 0)
-
   const newSaldo = Math.max(0, (loan.saldoPendiente ?? 0) - capNum)
   const valid    = total > 0
-
+  const curr     = loan.moneda === 'USD' ? 'US$' : 'S/'
   const activeAccounts = (accounts || []).filter(a => a.activa !== false)
-  const curr = loan.moneda === 'USD' ? 'US$' : 'S/'
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="eyebrow">
@@ -305,8 +419,8 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
         </div>
         <div className="modal-body">
-          {/* Status summary */}
-          <div style={{ padding: '10px 14px', background: 'var(--bg-sunk)', borderRadius: 8, marginBottom: 16, fontSize: 13, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {/* Status */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 14px', background: 'var(--bg-sunk)', borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
             <div>
               <div style={{ color: 'var(--ink-faint)', fontSize: 11, marginBottom: 2 }}>Saldo actual</div>
               <div className="mono" style={{ fontWeight: 700, color: 'var(--bad)' }}>{fmtPEN(loan.saldoPendiente ?? 0)}</div>
@@ -317,13 +431,14 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
             </div>
           </div>
 
-          {/* Capital + interest — always visible */}
+          {/* Cuota desglose — from schedule */}
           <div style={{ background: 'var(--bg-sunk)', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)', marginBottom: 10 }}>
-              Desglose de la cuota
+              Desglose — Cuota {cuotaNum}{loan.totalCuotas ? ` de ${loan.totalCuotas}` : ''}
+              {schedRow && <span style={{ color: 'var(--good)', marginLeft: 6 }}>· del cronograma</span>}
             </div>
-            <div className="field-row" style={{ marginBottom: 0 }}>
-              <div className="field">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
+              <div className="field" style={{ margin: 0 }}>
                 <label>Capital amortizado</label>
                 <div className="amount-input">
                   <span className="amount-prefix mono">{curr}</span>
@@ -331,7 +446,7 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
                     value={capital} onChange={e => setCapital(e.target.value)} placeholder="0.00"/>
                 </div>
               </div>
-              <div className="field">
+              <div className="field" style={{ margin: 0 }}>
                 <label>Interés</label>
                 <div className="amount-input">
                   <span className="amount-prefix mono">{curr}</span>
@@ -339,7 +454,7 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
                     value={interes} onChange={e => setInteres(e.target.value)} placeholder="0.00"/>
                 </div>
               </div>
-              <div className="field" style={{ flex: '0 0 auto', minWidth: 110 }}>
+              <div className="field" style={{ margin: 0, minWidth: 110 }}>
                 <label style={{ color: 'var(--accent)' }}>Total a pagar</label>
                 <div className="amount-input" style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-elev))' }}>
                   <span className="amount-prefix mono" style={{ color: 'var(--accent)' }}>{curr}</span>
@@ -380,14 +495,8 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid}
-            onClick={() => onConfirm({
-              loanId:   loan.id,
-              amount:   total,
-              capital:  capNum || total,
-              interes:  intNum,
-              date, notes, accountId,
-            })}>
-            <Icon name="check" size={14}/> Registrar cuota {cuotaNum > 0 ? `#${cuotaNum}` : ''}
+            onClick={() => onConfirm({ loanId: loan.id, amount: total, capital: capNum || total, interes: intNum, date, notes, accountId })}>
+            <Icon name="check" size={14}/> Registrar cuota {cuotaNum}
           </button>
         </div>
       </div>
@@ -398,6 +507,7 @@ function PaymentModal({ loan, cuotaNum, accounts, onConfirm, onClose }) {
 // ── Loan card ─────────────────────────────────────────────────────────────────
 function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
   const [showHistory, setShowHistory] = useState(false)
+  const [showSched,   setShowSched]   = useState(false)
 
   const saldo    = loan.saldoPendiente ?? loan.montoOriginal ?? 0
   const original = loan.montoOriginal  ?? saldo
@@ -409,160 +519,161 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
     .filter(p => p.loanId === loan.id)
     .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
 
-  // Cuotas counter: initial historical + registered payments
   const cuotasPagadas = (loan.cuotasYaPagadas || 0) + myPayments.length
   const totalCuotas   = loan.totalCuotas || 0
-  const cuotaActual   = cuotasPagadas + 1  // next cuota to pay
+  const cuotaActual   = cuotasPagadas + 1
   const cuotasRestantes = totalCuotas > 0 ? Math.max(0, totalCuotas - cuotasPagadas) : null
+
+  // Next cuota data from schedule
+  const nextSchedRow = loan.schedule ? loan.schedule[cuotasPagadas] : null
 
   const daysLeft = daysUntilPayment(loan.diaPago)
   const urgente  = daysLeft !== null && daysLeft <= 5 && saldo > 0
   const isPaid   = saldo === 0
-
-  const curr = loan.moneda === 'USD' ? 'US$' : 'S/'
+  const curr     = loan.moneda === 'USD' ? 'US$' : 'S/'
 
   return (
-    <motion.div
-      className="card"
-      variants={staggerItem}
-      whileHover={hoverLift}
-      style={{
-        border: urgente ? '2px solid var(--warn)' : isPaid ? '2px solid var(--good)' : '1px solid var(--border)',
-        position: 'relative', overflow: 'hidden', padding: 0,
-      }}
-    >
-      {/* Urgency stripe */}
+    <motion.div className="card" variants={staggerItem} whileHover={hoverLift}
+      style={{ border: urgente ? '2px solid var(--warn)' : isPaid ? '2px solid var(--good)' : '1px solid var(--border)', position: 'relative', overflow: 'hidden', padding: 0 }}>
       {urgente && !isPaid && (
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'var(--warn)' }} />
       )}
-
       <div style={{ padding: '16px 18px' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
           <div>
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              fontSize: 11, padding: '2px 8px', borderRadius: 4, marginBottom: 5,
-              background: `color-mix(in srgb, ${TIPO_COLOR[tipo]} 15%, var(--bg-elev))`,
-              color: TIPO_COLOR[tipo],
+              display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 4, marginBottom: 5,
+              background: `color-mix(in srgb, ${TIPO_COLOR[tipo]} 15%, var(--bg-elev))`, color: TIPO_COLOR[tipo],
             }}>
               {TIPO_LABEL[tipo] ?? tipo}{loan.banco && ` · ${loan.banco}`}
             </div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{loan.nombre}</div>
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-            {isPaid && (
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--good) 18%, var(--bg-elev))', color: 'var(--good)' }}>
-                ✓ PAGADO
-              </span>
-            )}
+            {isPaid && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--good) 18%, var(--bg-elev))', color: 'var(--good)' }}>✓ PAGADO</span>}
             <button className="btn btn-xs btn-ghost" onClick={() => onEdit(loan)}><Icon name="edit" size={11}/></button>
-            <button className="btn btn-xs btn-ghost" style={{ color: 'var(--bad)' }} onClick={() => onDelete(loan)}>
-              <Icon name="trash" size={11}/>
-            </button>
+            <button className="btn btn-xs btn-ghost" style={{ color: 'var(--bad)' }} onClick={() => onDelete(loan)}><Icon name="trash" size={11}/></button>
           </div>
         </div>
 
-        {/* Amounts grid */}
+        {/* Amounts */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 8px', marginBottom: 10 }}>
           <div>
             <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Saldo pendiente</div>
-            <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: isPaid ? 'var(--good)' : 'var(--bad)' }}>
-              {fmtPEN(saldo)}
-            </div>
+            <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: isPaid ? 'var(--good)' : 'var(--bad)' }}>{fmtPEN(saldo)}</div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Monto original</div>
-            <div className="mono" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-mute)' }}>
-              {fmtPEN(original)}
-            </div>
+            <div className="mono" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-mute)' }}>{fmtPEN(original)}</div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Cuota mensual</div>
-            <div className="mono" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)' }}>
-              {loan.cuota > 0 ? fmtPEN(loan.cuota) : '—'}
-            </div>
+            <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{loan.cuota > 0 ? fmtPEN(loan.cuota) : '—'}</div>
           </div>
         </div>
 
-        {/* Cuota breakdown */}
-        {(loan.capitalPorCuota > 0 || loan.interesPorCuota > 0) && (
-          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>
-            <span>Capital: <strong className="mono">{fmtPEN(loan.capitalPorCuota ?? 0)}</strong></span>
-            <span style={{ color: 'var(--border)' }}>·</span>
-            <span>Interés: <strong className="mono">{fmtPEN(loan.interesPorCuota ?? 0)}</strong></span>
+        {/* Next cuota breakdown from schedule */}
+        {nextSchedRow && !isPaid && (
+          <div style={{
+            display: 'flex', gap: 12, fontSize: 11, padding: '7px 10px',
+            background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-elev))',
+            borderRadius: 7, marginBottom: 10, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontWeight: 700, color: 'var(--accent)' }}>Cuota {cuotaActual}:</span>
+            <span>Capital <strong className="mono">{fmtPEN(nextSchedRow.capital)}</strong></span>
+            <span style={{ color: 'var(--border)' }}>+</span>
+            <span>Interés <strong className="mono">{fmtPEN(nextSchedRow.interes)}</strong></span>
+            <span style={{ color: 'var(--border)' }}>＝</span>
+            <span style={{ fontWeight: 700 }}><strong className="mono">{fmtPEN(nextSchedRow.total)}</strong></span>
+            {nextSchedRow.fecha && <span style={{ color: 'var(--ink-faint)', marginLeft: 'auto' }}>📅 {nextSchedRow.fecha}</span>}
           </div>
         )}
 
-        {/* Progress bar */}
+        {/* Progress */}
         <div style={{ marginBottom: 10 }}>
           <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${pct * 100}%`,
-              background: isPaid ? 'var(--good)' : 'var(--accent)',
-              borderRadius: 4, transition: 'width 0.6s ease',
-            }} />
+            <div style={{ height: '100%', width: `${pct * 100}%`, background: isPaid ? 'var(--good)' : 'var(--accent)', borderRadius: 4, transition: 'width 0.6s ease' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
             <span>Pagado {(pct * 100).toFixed(0)}% · {fmtPEN(pagado)}</span>
-            <span>{fmtPEN(saldo)} restante</span>
+            <span>{fmtPEN(saldo)} pendiente</span>
           </div>
         </div>
 
-        {/* Meta pills */}
+        {/* Pills */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
           {totalCuotas > 0 && (
-            <span style={{
-              fontSize: 11, padding: '3px 9px', borderRadius: 6, fontWeight: 600,
-              background: 'color-mix(in srgb, var(--accent) 12%, var(--bg-elev))',
-              color: 'var(--accent)',
-            }}>
-              Cuota {isPaid ? totalCuotas : cuotasPagadas} / {totalCuotas}
+            <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, fontWeight: 600, background: 'color-mix(in srgb, var(--accent) 12%, var(--bg-elev))', color: 'var(--accent)' }}>
+              Cuota {isPaid ? totalCuotas : cuotasPagadas}/{totalCuotas}
               {!isPaid && cuotasRestantes !== null && ` · ${cuotasRestantes} restante${cuotasRestantes !== 1 ? 's' : ''}`}
             </span>
           )}
-          {loan.tasaAnual > 0 && (
-            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-sunk)', color: 'var(--ink-mute)' }}>
-              TEA {loan.tasaAnual}%
-            </span>
+          {loan.tcea > 0 && (
+            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-sunk)', color: 'var(--ink-mute)' }}>TCEA {loan.tcea}%</span>
           )}
           {loan.diaPago && !isPaid && (
-            <span style={{
-              fontSize: 10, padding: '2px 7px', borderRadius: 4,
-              background: urgente ? 'color-mix(in srgb, var(--warn) 15%, var(--bg-elev))' : 'var(--bg-sunk)',
-              color: urgente ? 'var(--warn)' : 'var(--ink-mute)', fontWeight: urgente ? 700 : 400,
-            }}>
+            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: urgente ? 'color-mix(in srgb, var(--warn) 15%, var(--bg-elev))' : 'var(--bg-sunk)', color: urgente ? 'var(--warn)' : 'var(--ink-mute)', fontWeight: urgente ? 700 : 400 }}>
               {urgente ? `⚠ Pago en ${daysLeft}d` : `Día de pago: ${loan.diaPago}`}
             </span>
           )}
+          {loan.schedule && (
+            <button className="btn-link" style={{ fontSize: 10, padding: '2px 4px' }}
+              onClick={() => setShowSched(v => !v)}>
+              📋 Ver cronograma {showSched ? '▲' : '▼'}
+            </button>
+          )}
           {myPayments.length > 0 && (
-            <button
-              className="btn-link"
-              style={{ fontSize: 10, padding: '2px 4px' }}
-              onClick={() => setShowHistory(v => !v)}
-            >
-              {myPayments.length} pago{myPayments.length !== 1 ? 's' : ''} registrado{myPayments.length !== 1 ? 's' : ''} {showHistory ? '▲' : '▼'}
+            <button className="btn-link" style={{ fontSize: 10, padding: '2px 4px' }}
+              onClick={() => setShowHistory(v => !v)}>
+              {myPayments.length} pago{myPayments.length !== 1 ? 's' : ''} {showHistory ? '▲' : '▼'}
             </button>
           )}
         </div>
+
+        {/* Schedule preview */}
+        {showSched && loan.schedule && (
+          <div style={{ background: 'var(--bg-sunk)', borderRadius: 8, marginBottom: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-sunk)' }}>
+                    {['N°','Fecha','Capital','Interés','Cuota'].map(h => (
+                      <th key={h} style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--ink-faint)', fontSize: 10, textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loan.schedule.map((row, i) => {
+                    const isPaidRow = i < cuotasPagadas
+                    const isCurrent = i === cuotasPagadas
+                    return (
+                      <tr key={i} style={{ background: isPaidRow ? 'color-mix(in srgb, var(--good) 6%, transparent)' : isCurrent ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', color: isPaidRow ? 'var(--good)' : isCurrent ? 'var(--accent)' : 'var(--ink-faint)', fontWeight: isPaidRow || isCurrent ? 700 : 400 }}>
+                          {isPaidRow ? '✓' : isCurrent ? '▶' : row.n}
+                        </td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--ink-mute)' }}>{row.fecha ?? '—'}</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtPEN(row.capital)}</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-mute)' }}>{fmtPEN(row.interes)}</td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: isCurrent ? 'var(--accent)' : 'var(--ink)' }}>{fmtPEN(row.total)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Payment history */}
         {showHistory && myPayments.length > 0 && (
           <div style={{ background: 'var(--bg-sunk)', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)', marginBottom: 8 }}>
-              Historial de pagos
-            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)', marginBottom: 8 }}>Historial de pagos</div>
             {myPayments.slice(0, 12).map((p, i) => (
-              <div key={p.id} style={{
-                display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8,
-                padding: '5px 0', borderBottom: i < myPayments.length - 1 ? '1px solid var(--border)' : 'none',
-                fontSize: 12,
-              }}>
+              <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, padding: '5px 0', borderBottom: i < myPayments.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 12 }}>
                 <span style={{ color: 'var(--ink-mute)' }}>{p.date || '—'}{p.notes ? ` · ${p.notes}` : ''}</span>
                 {p.capital > 0 && p.interes > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
-                    K {fmtPEN(p.capital)} + I {fmtPEN(p.interes)}
-                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>K {fmtPEN(p.capital)} + I {fmtPEN(p.interes)}</span>
                 )}
                 <span className="mono" style={{ fontWeight: 600 }}>{fmtPEN(p.amount)}</span>
               </div>
@@ -575,16 +686,15 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
       {!isPaid && (
         <button
           className="btn btn-soft btn-full"
-          style={{
-            borderTop: '1px solid var(--border)', borderRadius: 0,
-            margin: 0, padding: '11px 18px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}
+          style={{ borderTop: '1px solid var(--border)', borderRadius: 0, margin: 0, padding: '11px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           onClick={() => onPay(loan, cuotaActual)}
         >
           <Icon name="check" size={13}/>
           Registrar cuota {totalCuotas > 0 ? `${cuotaActual} de ${totalCuotas}` : ''}
-          {loan.cuota > 0 && <span className="mono" style={{ fontWeight: 700 }}>{fmtPEN(loan.cuota)}</span>}
+          {nextSchedRow
+            ? <span className="mono" style={{ fontWeight: 700 }}>{fmtPEN(nextSchedRow.total)}</span>
+            : loan.cuota > 0 ? <span className="mono" style={{ fontWeight: 700 }}>{fmtPEN(loan.cuota)}</span>
+            : null}
         </button>
       )}
     </motion.div>
@@ -592,18 +702,10 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
 }
 
 // ── Main view ─────────────────────────────────────────────────────────────────
-export default function LoansView({
-  loans = [],
-  loanPayments = [],
-  accounts = [],
-  onAddLoan,
-  onEditLoan,
-  onDeleteLoan,
-  onRegisterLoanPayment,
-}) {
+export default function LoansView({ loans = [], loanPayments = [], accounts = [], onAddLoan, onEditLoan, onDeleteLoan, onRegisterLoanPayment }) {
   const dialog = useDialog()
-  const [modal, setModal]       = useState(null)  // null | 'new' | { loan }
-  const [payModal, setPayModal] = useState(null)  // null | { loan, cuotaNum }
+  const [modal, setModal]       = useState(null)
+  const [payModal, setPayModal] = useState(null)
 
   const active   = loans.filter(l => l.activo !== false && (l.saldoPendiente ?? l.montoOriginal ?? 1) > 0)
   const pagados  = loans.filter(l => l.activo !== false && (l.saldoPendiente ?? 1) === 0)
@@ -613,33 +715,18 @@ export default function LoansView({
   const totalCuota  = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
   const totalPagado = loanPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
 
-  // Next payment urgency
-  const urgentLoans = active.filter(l => {
-    const d = daysUntilPayment(l.diaPago)
-    return d !== null && d <= 7
-  }).sort((a, b) => daysUntilPayment(a.diaPago) - daysUntilPayment(b.diaPago))
+  const urgentLoans = active.filter(l => { const d = daysUntilPayment(l.diaPago); return d !== null && d <= 7 })
+    .sort((a, b) => daysUntilPayment(a.diaPago) - daysUntilPayment(b.diaPago))
 
   function handleSave(data) {
-    if (modal === 'new') {
-      onAddLoan({ ...data, id: 'loan-' + Date.now(), createdAt: new Date().toISOString() })
-    } else {
-      onEditLoan({ ...modal.loan, ...data })
-    }
+    if (modal === 'new') onAddLoan({ ...data, id: 'loan-' + Date.now(), createdAt: new Date().toISOString() })
+    else onEditLoan({ ...modal.loan, ...data })
     setModal(null)
   }
 
   async function handleDelete(loan) {
     const ok = await dialog.danger({ title: 'Eliminar préstamo', itemName: loan.nombre })
     if (ok) onDeleteLoan(loan.id)
-  }
-
-  function handlePay(loan, cuotaNum) {
-    setPayModal({ loan, cuotaNum })
-  }
-
-  function confirmPayment(data) {
-    onRegisterLoanPayment(data)
-    setPayModal(null)
   }
 
   return (
@@ -649,7 +736,7 @@ export default function LoansView({
           <div className="eyebrow">Deuda a largo plazo</div>
           <h1>Préstamos</h1>
           <p className="lede">
-            Registra capital, interés y cuotas. Cada cuota pagada reduce el saldo y actualiza el progreso.
+            Sistema francés: cuota fija, capital e interés variables mes a mes. Cronograma completo desde el primer registro.
           </p>
         </div>
         <div className="view-header-actions">
@@ -675,28 +762,21 @@ export default function LoansView({
         </motion.div>
         <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
           <div className="kpi-label">Total amortizado</div>
-          <div className="kpi-value" style={{ color: 'var(--good)' }}>
-            {totalPagado > 0 ? fmtPEN(totalPagado) : '—'}
-          </div>
+          <div className="kpi-value" style={{ color: 'var(--good)' }}>{totalPagado > 0 ? fmtPEN(totalPagado) : '—'}</div>
           <div className="kpi-foot">{loanPayments.length} pago{loanPayments.length !== 1 ? 's' : ''} registrado{loanPayments.length !== 1 ? 's' : ''}</div>
         </motion.div>
         {pagados.length > 0 && (
           <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
             <div className="kpi-label">Cancelados</div>
             <div className="kpi-value" style={{ color: 'var(--good)' }}>{pagados.length}</div>
-            <div className="kpi-foot">Préstamo{pagados.length !== 1 ? 's' : ''} liquidado{pagados.length !== 1 ? 's' : ''} ✓</div>
+            <div className="kpi-foot">Liquidado{pagados.length !== 1 ? 's' : ''} ✓</div>
           </motion.div>
         )}
       </motion.section>
 
-      {/* Upcoming payment alert */}
+      {/* Upcoming alert */}
       {urgentLoans.length > 0 && (
-        <div style={{
-          background: 'color-mix(in srgb, var(--warn) 10%, var(--bg-elev))',
-          border: '1px solid color-mix(in srgb, var(--warn) 35%, transparent)',
-          borderRadius: 10, padding: '12px 16px', marginBottom: 20,
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-        }}>
+        <div style={{ background: 'color-mix(in srgb, var(--warn) 10%, var(--bg-elev))', border: '1px solid color-mix(in srgb, var(--warn) 35%, transparent)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <span style={{ fontSize: 18 }}>⚠</span>
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--warn)', marginBottom: 4 }}>Pagos próximos</div>
@@ -717,33 +797,25 @@ export default function LoansView({
         </div>
       )}
 
-      {/* Loan cards */}
+      {/* Cards */}
       {loans.filter(l => l.activo !== false).length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>🏦</div>
           <h3 style={{ marginBottom: 8 }}>Sin préstamos registrados</h3>
-          <p style={{ color: 'var(--ink-mute)', marginBottom: 20, maxWidth: 340, margin: '0 auto 20px' }}>
-            Registra tus préstamos activos. Incluye capital, interés y cuántas cuotas ya pagaste para arrancar con el saldo correcto.
+          <p style={{ color: 'var(--ink-mute)', marginBottom: 20, maxWidth: 360, margin: '0 auto 20px' }}>
+            Registra tu préstamo, pega el TCEA y el número de cuotas, y la app calcula automáticamente el cronograma con capital e interés por cada cuota.
           </p>
           <button className="btn btn-primary" onClick={() => setModal('new')}>
             <Icon name="plus" size={14}/> Registrar primer préstamo
           </button>
         </div>
       ) : (
-        <motion.div
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, marginBottom: 32 }}
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-        >
+        <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, marginBottom: 32 }} variants={staggerContainer} initial="hidden" animate="visible">
           {[...active, ...pagados].map(loan => (
-            <LoanCard
-              key={loan.id}
-              loan={loan}
-              payments={loanPayments}
+            <LoanCard key={loan.id} loan={loan} payments={loanPayments}
               onEdit={l => setModal({ loan: l })}
               onDelete={handleDelete}
-              onPay={handlePay}
+              onPay={(l, n) => setPayModal({ loan: l, cuotaNum: n })}
             />
           ))}
         </motion.div>
@@ -752,16 +824,10 @@ export default function LoansView({
       {/* Inactive */}
       {inactive.length > 0 && (
         <div style={{ opacity: 0.6, marginBottom: 24 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-mute)', marginBottom: 8 }}>
-            Inactivos ({inactive.length})
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-mute)', marginBottom: 8 }}>Inactivos ({inactive.length})</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {inactive.map(l => (
-              <div key={l.id} style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: 12,
-                border: '1px solid var(--border)', background: 'var(--bg-elev)',
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
+              <div key={l.id} style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border)', background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="wallet" size={12}/>
                 <span>{l.nombre}</span>
                 <button className="btn btn-xs btn-ghost" onClick={() => onEditLoan({ ...l, activo: true })}>↩ Reactivar</button>
@@ -771,23 +837,8 @@ export default function LoansView({
         </div>
       )}
 
-      {/* Modals */}
-      {modal && (
-        <LoanModal
-          initial={modal === 'new' ? null : modal.loan}
-          onSave={handleSave}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {payModal && (
-        <PaymentModal
-          loan={payModal.loan}
-          cuotaNum={payModal.cuotaNum}
-          accounts={accounts}
-          onConfirm={confirmPayment}
-          onClose={() => setPayModal(null)}
-        />
-      )}
+      {modal && <LoanModal initial={modal === 'new' ? null : modal.loan} onSave={handleSave} onClose={() => setModal(null)} />}
+      {payModal && <PaymentModal loan={payModal.loan} cuotaNum={payModal.cuotaNum} accounts={accounts} onConfirm={data => { onRegisterLoanPayment(data); setPayModal(null) }} onClose={() => setPayModal(null)} />}
     </div>
   )
 }
