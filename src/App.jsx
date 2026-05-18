@@ -1492,6 +1492,7 @@ function Dashboard({ signOut, userEmail } = {}) {
                 <PaymentsView
                   bills={bills}
                   loans={loans}
+                  loanPayments={loanPayments}
                   creditLines={creditLines}
                   accounts={accounts}
                   monthlyChecks={monthlyChecks}

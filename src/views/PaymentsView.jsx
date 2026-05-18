@@ -263,10 +263,11 @@ function Section({ title, icon, color, items, checks, year, month, onCheck, onUn
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function PaymentsView({
-  bills        = [],
-  loans        = [],
-  creditLines  = [],
-  accounts     = [],
+  bills         = [],
+  loans         = [],
+  loanPayments  = [],
+  creditLines   = [],
+  accounts      = [],
   monthlyChecks = {},
   onToggleMonthlyCheck,
   onRegisterLoanPayment,
@@ -305,24 +306,64 @@ export default function PaymentsView({
     .sort((a, b) => (a.dueDay ?? 99) - (b.dueDay ?? 99)),
   [bills])
 
+  // Loan items — month-aware: uses schedule to find correct cuota for the selected month
   const loanItems = useMemo(() => loans
     .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
-    .map(l => ({
-      type:         'loan',
-      id:           l.id,
-      nombre:       l.nombre,
-      sub:          l.banco ? `${l.banco} · Cuota mensual` : 'Cuota mensual',
-      amount:       l.cuota ?? 0,
-      dueDay:       l.diaPago ?? null,
-      color:        '#f59e0b',
-      tipoLabel:    'Préstamo',
-      saldo:        l.saldoPendiente ?? 0,
-      defaultAmount: l.cuota ?? 0,
-      // Extra for quick-pay
-      _raw: l,
-    }))
+    .map(l => {
+      const myP = loanPayments.filter(p => p.loanId === l.id)
+      const cuotasPagadas = (l.cuotasYaPagadas || 0) + myP.length
+
+      // Find the schedule row for the selected month
+      let schedRow = null
+      let schedIdx = -1
+      if (l.schedule) {
+        schedIdx = l.schedule.findIndex(r => r.fecha && r.fecha.startsWith(ym))
+        if (schedIdx >= 0) schedRow = l.schedule[schedIdx]
+      }
+
+      // If loan has a schedule but no row for this month → skip (not due this month)
+      if (l.schedule && !schedRow) return null
+
+      // Determine if this month's cuota is already covered by cuotasYaPagadas or registered payments
+      const alreadyPaid = schedRow ? schedIdx < cuotasPagadas : false
+
+      const cuotaNum = schedIdx >= 0 ? schedIdx + 1 : null
+      const dueDay   = schedRow
+        ? new Date(schedRow.fecha + 'T00:00:00').getDate()
+        : (l.diaPago ?? null)
+
+      return {
+        type:          'loan',
+        id:            l.id,
+        nombre:        l.nombre,
+        sub:           [
+          l.banco ?? null,
+          cuotaNum ? `Cuota ${cuotaNum}${l.totalCuotas ? ` de ${l.totalCuotas}` : ''}` : 'Cuota mensual',
+        ].filter(Boolean).join(' · '),
+        amount:        schedRow?.total ?? l.cuota ?? 0,
+        dueDay,
+        color:         '#f59e0b',
+        tipoLabel:     'Préstamo',
+        saldo:         l.saldoPendiente ?? 0,
+        defaultAmount: schedRow?.total ?? l.cuota ?? 0,
+        alreadyPaid,   // historically paid via cuotasYaPagadas
+        _raw:          l,
+      }
+    })
+    .filter(Boolean)
     .sort((a, b) => (a.dueDay ?? 99) - (b.dueDay ?? 99)),
-  [loans])
+  [loans, loanPayments, ym])
+
+  // Merge monthlyChecks with derived paid status from cuotasYaPagadas
+  const mergedChecks = useMemo(() => {
+    const derived = {}
+    loanItems.forEach(item => {
+      if (item.alreadyPaid) {
+        derived[`loan-${item.id}-${ym}`] = { paid: true, derived: true }
+      }
+    })
+    return { ...derived, ...monthlyChecks } // explicit user checks override derived
+  }, [loanItems, monthlyChecks, ym])
 
   const creditItems = useMemo(() => creditLines
     .filter(cl => cl.activa !== false && (cl.usado ?? 0) > 0)
@@ -345,7 +386,7 @@ export default function PaymentsView({
 
   const allItems = [...billItems, ...loanItems, ...creditItems]
   const total    = allItems.reduce((s, it) => s + it.amount, 0)
-  const paidItems = allItems.filter(it => monthlyChecks[`${it.type}-${it.id}-${ym}`])
+  const paidItems = allItems.filter(it => mergedChecks[`${it.type}-${it.id}-${ym}`])
   const paidTotal = paidItems.reduce((s, it) => s + it.amount, 0)
   const pending   = total - paidTotal
   const pct       = total > 0 ? paidTotal / total : 0
@@ -353,16 +394,14 @@ export default function PaymentsView({
   // ── Handlers ────────────────────────────────────────────────────────────────
   function handleCheck(item) {
     if (item.type === 'bill') {
-      // Simple toggle — no financial sync for recurring bills
       onToggleMonthlyCheck('bill', item.id, ym, true)
     } else {
-      // Loans / credit lines → open quick-pay modal
       setQuickPay(item)
     }
   }
 
-  function handleUncheck(type, itemId, ym) {
-    onToggleMonthlyCheck(type, itemId, ym, false)
+  function handleUncheck(type, itemId, ymKey) {
+    onToggleMonthlyCheck(type, itemId, ymKey, false)
   }
 
   function handleQuickPayConfirm({ amount, accountId }) {
@@ -395,10 +434,10 @@ export default function PaymentsView({
     setQuickPay(null)
   }
 
-  // Alerts: items due within 5 days, not yet paid
+  // Alerts: items due within 5 days, not yet paid (use mergedChecks so already-paid loans don't appear)
   const urgent = isCurrentMonth
     ? allItems.filter(it => {
-        if (monthlyChecks[`${it.type}-${it.id}-${ym}`]) return false
+        if (mergedChecks[`${it.type}-${it.id}-${ym}`]) return false
         const d = daysUntil(it.dueDay, selYear, selMonth)
         return d !== null && d >= 0 && d <= 5
       })
@@ -517,7 +556,7 @@ export default function PaymentsView({
         icon="🔵"
         color="#3b82f6"
         items={billItems}
-        checks={monthlyChecks}
+        checks={mergedChecks}
         year={selYear}
         month={selMonth}
         onCheck={handleCheck}
@@ -528,7 +567,7 @@ export default function PaymentsView({
         icon="🟡"
         color="#f59e0b"
         items={loanItems}
-        checks={monthlyChecks}
+        checks={mergedChecks}
         year={selYear}
         month={selMonth}
         onCheck={handleCheck}
@@ -539,7 +578,7 @@ export default function PaymentsView({
         icon="🔴"
         color="#ef4444"
         items={creditItems}
-        checks={monthlyChecks}
+        checks={mergedChecks}
         year={selYear}
         month={selMonth}
         onCheck={handleCheck}
