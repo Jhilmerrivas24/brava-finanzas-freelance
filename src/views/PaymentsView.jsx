@@ -346,7 +346,11 @@ export default function PaymentsView({
         tipoLabel:     'Préstamo',
         saldo:         l.saldoPendiente ?? 0,
         defaultAmount: schedRow?.total ?? l.cuota ?? 0,
-        alreadyPaid,   // historically paid via cuotasYaPagadas
+        // Schedule breakdown for correct capital/interes when registering payment
+        schedCapital:  schedRow?.capital ?? null,
+        schedInteres:  schedRow?.interes ?? null,
+        schedFecha:    schedRow?.fecha   ?? null,
+        alreadyPaid,
         _raw:          l,
       }
     })
@@ -407,12 +411,16 @@ export default function PaymentsView({
   function handleQuickPayConfirm({ amount, accountId }) {
     const item = quickPay
     if (item.type === 'loan') {
+      // Use schedule's capital/interes breakdown if available
+      const capital = item.schedCapital != null ? item.schedCapital : amount
+      const interes = item.schedInteres != null ? item.schedInteres : 0
+      const date    = item.schedFecha   ?? new Date().toISOString().split('T')[0]
       onRegisterLoanPayment({
-        loanId:    item.id,
+        loanId: item.id,
         amount,
-        capital:   amount,
-        interes:   0,
-        date:      new Date().toISOString().split('T')[0],
+        capital,
+        interes,
+        date,
         accountId,
       })
     } else if (item.type === 'credit') {
