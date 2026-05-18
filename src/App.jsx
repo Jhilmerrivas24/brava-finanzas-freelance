@@ -659,6 +659,48 @@ function Dashboard({ signOut, userEmail } = {}) {
         mergeOrMigrate(sbCreditStatements,   setCreditStatements,   'brava:creditStatements',   'credit_statements'),
       ])
 
+      // ── One-time orphan cleanup ───────────────────────────────────────────
+      // Purge child records whose parent was deleted before cascade-delete was
+      // deployed (historical stale data in localStorage + Supabase).
+
+      // Loan payments whose loan no longer exists
+      const finalLoans    = sbLoans?.length    > 0 ? sbLoans    : loadLS('brava:loans', [])
+      const finalPayments = sbLoanPayments?.length > 0 ? sbLoanPayments : loadLS('brava:loanPayments', [])
+      const loanIds       = new Set(finalLoans.map(l => l.id))
+      const orphanPmts    = finalPayments.filter(p => !loanIds.has(p.loanId))
+      if (orphanPmts.length > 0) {
+        setLoanPayments(ps => ps.filter(p => loanIds.has(p.loanId)))
+        orphanPmts.forEach(p => sbWrite('loan_payments', 'delete', null, p.id))
+        console.log(`[cleanup] removed ${orphanPmts.length} orphaned loan payment(s)`)
+      }
+
+      // Credit statements whose card no longer exists
+      const finalCards = sbCreditLines?.length > 0 ? sbCreditLines : loadLS('brava:creditLines', [])
+      const finalStmts = sbCreditStatements?.length > 0 ? sbCreditStatements : loadLS('brava:creditStatements', [])
+      const cardIds    = new Set(finalCards.map(cl => cl.id))
+      const orphanStmts = finalStmts.filter(s => !cardIds.has(s.cardId))
+      if (orphanStmts.length > 0) {
+        setCreditStatements(ss => ss.filter(s => cardIds.has(s.cardId)))
+        orphanStmts.forEach(s => sbWrite('credit_statements', 'delete', null, s.id))
+        console.log(`[cleanup] removed ${orphanStmts.length} orphaned credit statement(s)`)
+      }
+
+      // Tax records whose invoice no longer exists
+      const finalInvoices = sbInvoices?.length > 0 ? sbInvoices : loadLS('brava:invoices', [])
+      const finalTI       = (sbTaxInvoices ?? loadLS('brava:taxInvoices', []))
+      const finalRH       = (sbTaxRH       ?? loadLS('brava:taxRH', []))
+      const invoiceIds    = new Set(finalInvoices.map(i => i.id))
+      const orphanTI = finalTI.filter(t => t.fromInvoiceId && !invoiceIds.has(t.fromInvoiceId))
+      const orphanRH = finalRH.filter(t => t.fromInvoiceId && !invoiceIds.has(t.fromInvoiceId))
+      if (orphanTI.length > 0) {
+        setTaxInvoices(xs => xs.filter(t => !t.fromInvoiceId || invoiceIds.has(t.fromInvoiceId)))
+        orphanTI.forEach(t => sbWrite('tax_invoices', 'delete', null, t.id))
+      }
+      if (orphanRH.length > 0) {
+        setTaxRH(xs => xs.filter(t => !t.fromInvoiceId || invoiceIds.has(t.fromInvoiceId)))
+        orphanRH.forEach(t => sbWrite('tax_rh', 'delete', null, t.id))
+      }
+
     }
 
     loadFromSupabase()
