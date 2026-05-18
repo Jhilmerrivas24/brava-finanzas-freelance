@@ -547,20 +547,40 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
         </div>
 
         {/* Amounts */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 8px', marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Saldo pendiente</div>
-            <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: isPaid ? 'var(--good)' : 'var(--bad)' }}>{fmtPEN(saldo)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Monto original</div>
-            <div className="mono" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-mute)' }}>{fmtPEN(original)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Cuota mensual</div>
-            <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{loan.cuota > 0 ? fmtPEN(loan.cuota) : '—'}</div>
-          </div>
-        </div>
+        {(() => {
+          const totalIntereses = loan.schedule ? Math.round(loan.schedule.reduce((s, r) => s + r.interes, 0) * 100) / 100 : null
+          const costoTotal     = totalIntereses != null ? Math.round((original + totalIntereses) * 100) / 100 : null
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 8px', marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Saldo pendiente</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: isPaid ? 'var(--good)' : 'var(--bad)' }}>{fmtPEN(saldo)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Monto original</div>
+                  <div className="mono" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-mute)' }}>{fmtPEN(original)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Cuota mensual</div>
+                  <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>{loan.cuota > 0 ? fmtPEN(loan.cuota) : '—'}</div>
+                </div>
+              </div>
+              {(totalIntereses != null) && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px', marginBottom: 10, padding: '7px 10px', background: 'color-mix(in srgb, var(--bad) 5%, var(--bg-elev))', borderRadius: 7 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Total intereses 💸</div>
+                    <div className="mono" style={{ fontWeight: 700, fontSize: 14, color: 'var(--warn)' }}>{fmtPEN(totalIntereses)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-mute)' }}>Pagarás en total</div>
+                    <div className="mono" style={{ fontWeight: 700, fontSize: 14, color: 'var(--bad)' }}>{fmtPEN(costoTotal)}</div>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        })()}
 
         {/* Next cuota breakdown from schedule */}
         {nextSchedRow && !isPaid && (
@@ -700,9 +720,16 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
   const pagados  = loans.filter(l => l.activo !== false && (l.saldoPendiente ?? 1) === 0)
   const inactive = loans.filter(l => l.activo === false)
 
-  const totalDeuda  = active.reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
-  const totalCuota  = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
-  const totalPagado = loanPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
+  const totalDeuda     = active.reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
+  const totalCuota     = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
+  const totalPagado    = loanPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
+  const totalIntereses = loans.filter(l => l.activo !== false && l.schedule)
+    .reduce((s, l) => s + l.schedule.reduce((si, r) => si + r.interes, 0), 0)
+  const totalCostoTotal = loans.filter(l => l.activo !== false && l.montoOriginal)
+    .reduce((s, l) => {
+      const intereses = l.schedule ? l.schedule.reduce((si, r) => si + r.interes, 0) : 0
+      return s + (l.montoOriginal ?? 0) + intereses
+    }, 0)
 
   const urgentLoans = active.filter(l => { const d = daysUntilPayment(l.diaPago); return d !== null && d <= 7 })
     .sort((a, b) => daysUntilPayment(a.diaPago) - daysUntilPayment(b.diaPago))
@@ -754,6 +781,13 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
           <div className="kpi-value" style={{ color: 'var(--good)' }}>{totalPagado > 0 ? fmtPEN(totalPagado) : '—'}</div>
           <div className="kpi-foot">{loanPayments.length} pago{loanPayments.length !== 1 ? 's' : ''} registrado{loanPayments.length !== 1 ? 's' : ''}</div>
         </motion.div>
+        {totalIntereses > 0 && (
+          <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
+            <div className="kpi-label">Total intereses 💸</div>
+            <div className="kpi-value" style={{ color: 'var(--warn)' }}>{fmtPEN(totalIntereses)}</div>
+            <div className="kpi-foot">Costo total: <span className="mono" style={{ color: 'var(--bad)', fontWeight: 700 }}>{fmtPEN(totalCostoTotal)}</span></div>
+          </motion.div>
+        )}
         {pagados.length > 0 && (
           <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
             <div className="kpi-label">Cancelados</div>
