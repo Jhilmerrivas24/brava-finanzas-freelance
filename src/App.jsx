@@ -1011,6 +1011,7 @@ function Dashboard({ signOut, userEmail } = {}) {
       notes: notes || '',
     }
     setLoanPayments(ps => [payment, ...ps])
+    sbWrite('loan_payments', 'insert', payment)   // ← persist to Supabase (was missing)
 
     // Reduce saldo
     const reduction    = capital ?? amount
@@ -1117,13 +1118,23 @@ function Dashboard({ signOut, userEmail } = {}) {
   const addDailyExpense = (e) => {
     setDailyExpenses(es => [e, ...es])
     sbWrite('daily_expenses', 'insert', e)
-    // Debit account saldo
+    // Debit account saldo + create movement record for audit trail
     if (e.sourceType === 'account' && e.sourceId) {
       const acc = accounts.find(a => a.id === e.sourceId)
       if (acc) {
         const newSaldo = (acc.saldo ?? acc.balance ?? 0) - e.amount
         setAccounts(as => as.map(a => a.id === e.sourceId ? { ...a, saldo: newSaldo, balance: newSaldo } : a))
         sbWrite('accounts', 'update', { id: e.sourceId, saldo: newSaldo, balance: newSaldo })
+        addAccountMovement({
+          id:          'mov-' + Date.now(),
+          accountId:   e.sourceId,
+          type:        'expense',
+          description: e.description || 'Gasto diario',
+          amount:      e.amount,
+          delta:       -e.amount,
+          date:        e.date || new Date().toISOString().split('T')[0],
+          dailyExpenseId: e.id,
+        })
       }
     }
     // Increment credit used
@@ -1500,6 +1511,7 @@ function Dashboard({ signOut, userEmail } = {}) {
                   onRegisterLoanPayment={registerLoanPayment}
                   onUpdateCreditUsado={updateCreditUsado}
                   onAddAccountMovement={addAccountMovement}
+                  onAddCreditStatement={addCreditStatement}
                 />
               )}
               {view === 'loans' && (
@@ -1580,7 +1592,7 @@ function Dashboard({ signOut, userEmail } = {}) {
                   variableExpenses={variableExpenses}
                 />
               )}
-              {view === 'budget'    && <BudgetView bills={bills} />}
+              {view === 'budget'    && <BudgetView bills={bills} variableExpenses={variableExpenses} dailyExpenses={dailyExpenses} />}
               {view === 'goals'     && (
                 <GoalsView
                   goals={goals}

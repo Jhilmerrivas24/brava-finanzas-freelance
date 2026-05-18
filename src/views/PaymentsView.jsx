@@ -273,6 +273,7 @@ export default function PaymentsView({
   onRegisterLoanPayment,
   onUpdateCreditUsado,
   onAddAccountMovement,
+  onAddCreditStatement,
 }) {
   const now = new Date()
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -425,6 +426,7 @@ export default function PaymentsView({
       })
     } else if (item.type === 'credit') {
       onUpdateCreditUsado(item.id, -amount)
+      const payDate = new Date().toISOString().split('T')[0]
       if (accountId && onAddAccountMovement) {
         onAddAccountMovement({
           id:          'mov-' + Date.now(),
@@ -433,7 +435,19 @@ export default function PaymentsView({
           description: `Pago tarjeta: ${item.nombre}`,
           amount,
           delta:       -amount,
-          date:        new Date().toISOString().split('T')[0],
+          date:        payDate,
+        })
+      }
+      // Record statement so CreditLinesView and GastosView credit tab show it as paid
+      if (onAddCreditStatement) {
+        onAddCreditStatement({
+          id:            'cs-' + Date.now(),
+          cardId:        item.id,
+          period:        ym,
+          isPaid:        true,
+          paidAmount:    amount,
+          paidAt:        payDate,
+          chargesManual: null,
         })
       }
     }

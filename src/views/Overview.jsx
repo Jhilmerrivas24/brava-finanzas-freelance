@@ -481,17 +481,20 @@ export default function Overview({
     }
     const FREQ_DIV = { monthly:1, bimonthly:2, quarterly:3, annual:12 }
 
-    const invoiceIncome   = (invoices || []).filter(i => i.status === 'paid' && isMon(i.issuedDate)).reduce((s, i) => s + i.amount, 0)
+    // Use paidAt if available (consistent with App.jsx primary useMemo)
+    const invoiceIncome   = (invoices || []).filter(i => i.status === 'paid' && isMon(i.paidAt || i.issuedDate)).reduce((s, i) => s + i.amount, 0)
     const fixedMonthly    = (fixedIncome || []).reduce((s, inc) => s + (inc.amount || 0) / (FREQ_DIV[inc.frequency] || 1), 0)
     const inThisMonth     = invoiceIncome + fixedMonthly
 
     const outBills        = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
     const outVar          = (variableExpenses || []).filter(e => isMon(e.date)).reduce((s, e) => s + e.amount, 0)
     const outDaily        = (dailyExpenses || []).filter(e => isMon(e.date)).reduce((s, e) => s + e.amount, 0)
-    const outThisMonth    = outBills + outVar + outDaily
+    // Include loan cuotas (same as App.jsx primary useMemo)
+    const outLoans        = (loans || []).filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0).reduce((s, l) => s + (l.cuota ?? 0), 0)
+    const outThisMonth    = outBills + outVar + outDaily + outLoans
 
-    const igvThisMonth    = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'factura' && isMon(i.issuedDate)).reduce((s, i) => s + (i.igv ?? i.amount * 0.18), 0)
-    const retentionThisMonth = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isMon(i.issuedDate)).reduce((s, i) => s + (i.retention || 0), 0)
+    const igvThisMonth    = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'factura' && isMon(i.paidAt || i.issuedDate)).reduce((s, i) => s + (i.igv ?? i.amount * 0.18), 0)
+    const retentionThisMonth = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isMon(i.paidAt || i.issuedDate)).reduce((s, i) => s + (i.retention || 0), 0)
 
     const qm         = (quotes || []).filter(q => q.date && isMon(q.date))
     const hoursBilled = qm.filter(q => q.status === 'pending' || q.status === 'accepted')
@@ -506,7 +509,7 @@ export default function Overview({
     if (isCurrentMonth) return data
     return { ...data, ...computeForMonth(selYear, selMonth) }
   // eslint-disable-next-line
-  }, [selYear, selMonth, isCurrentMonth, data, invoices, bills, variableExpenses, dailyExpenses, fixedIncome, quotes])
+  }, [selYear, selMonth, isCurrentMonth, data, invoices, bills, variableExpenses, dailyExpenses, fixedIncome, quotes, loans])
 
   // Previous month for comparison deltas
   const prevData = useMemo(() => {

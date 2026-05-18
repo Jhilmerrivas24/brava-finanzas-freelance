@@ -80,7 +80,7 @@ function statusColor(pct) {
 }
 
 // ── Main view ──────────────────────────────────────────────────────────────────
-export default function BudgetView({ bills = [] }) {
+export default function BudgetView({ bills = [], variableExpenses = [], dailyExpenses = [] }) {
   const dialog = useDialog()
   const now = new Date()
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -92,11 +92,8 @@ export default function BudgetView({ bills = [] }) {
   // Per-cell editing mode
   const [editing, setEditing] = useState({})
 
-  const monthKey   = toMonthKey(selYear, selMonth)
+  const monthKey    = toMonthKey(selYear, selMonth)
   const currentCats = allBudgets[monthKey] || {}
-
-  // Load variable expenses from localStorage (self-contained, no prop)
-  const variableExpenses = useMemo(() => loadData(KEYS.variableExpenses, []), [])
 
   // Actual spending per budget category for the selected month
   const actualSpending = useMemo(() => {
@@ -113,6 +110,20 @@ export default function BudgetView({ bills = [] }) {
       }
     })
 
+    // Daily expenses in selected month (mapped to Otro unless more specific)
+    const DAILY_TO_BUDGET = {
+      'Alimentación': 'Alimentación', 'Transporte': 'Transporte',
+      'Marketing': 'Marketing', 'Herramientas': 'Herramientas',
+    }
+    dailyExpenses.forEach(e => {
+      if (!e.date) return
+      const d = new Date(e.date)
+      if (d.getFullYear() === selYear && (d.getMonth() + 1) === selMonth) {
+        const cat = DAILY_TO_BUDGET[e.category] || 'Otro'
+        result[cat] = (result[cat] || 0) + (e.amount || 0)
+      }
+    })
+
     // Active bills (monthly recurring)
     bills.filter(b => b.active !== false).forEach(b => {
       const cat = BILL_TO_BUDGET[b.category] || 'Otro'
@@ -120,7 +131,7 @@ export default function BudgetView({ bills = [] }) {
     })
 
     return result
-  }, [variableExpenses, bills, selYear, selMonth])
+  }, [variableExpenses, dailyExpenses, bills, selYear, selMonth])
 
   // Save a budget amount for a category
   function setBudgetAmount(catId, rawValue) {
