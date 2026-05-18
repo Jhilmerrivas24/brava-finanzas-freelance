@@ -102,7 +102,7 @@ function BillModal({ initial, onSave, onClose }) {
 }
 
 // ── Panel (usado dentro de GastosView) ────────────────────────────────────────
-export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill, extraMonthly = 0, extraCount = 0, extraLabel = '' }) {
+export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill, extraMonthly = 0, extraYearly = 0, extraCount = 0 }) {
   const dialog = useDialog()
   const [modal, setModal] = useState(null)
 
@@ -172,10 +172,10 @@ export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill, 
         </div>
         <div className="kpi">
           <div className="kpi-label">Total activo / año</div>
-          <div className="kpi-value">{fmtPEN(total * 12, { decimals:0 })}</div>
+          <div className="kpi-value">{fmtPEN(billsOnly * 12 + extraYearly, { decimals:0 })}</div>
           <div className="kpi-foot">
-            {extraMonthly > 0
-              ? `Gastos S/ ${Math.round(billsOnly).toLocaleString()} + Préstamos S/ ${Math.round(extraMonthly).toLocaleString()}`
+            {extraYearly > 0
+              ? `Gastos S/ ${Math.round(billsOnly * 12).toLocaleString()} + Préstamos S/ ${Math.round(extraYearly).toLocaleString()}`
               : `${(bills || []).length} gasto${(bills || []).length !== 1 ? 's' : ''} registrado${(bills || []).length !== 1 ? 's' : ''}`}
           </div>
         </div>

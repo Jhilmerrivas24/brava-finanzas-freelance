@@ -201,6 +201,15 @@ export default function GastosView({
   const activeLoans    = (loans || []).filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
   const totalLoanCuota = activeLoans.reduce((s, l) => s + (l.cuota ?? 0), 0)
 
+  // Yearly loan total: only count actual remaining cuotas (max 12), not extrapolate forever
+  const loanYearlyTotal = activeLoans.reduce((s, l) => {
+    const myP = (loanPayments || []).filter(p => p.loanId === l.id)
+    const cuotasPagadas  = (l.cuotasYaPagadas || 0) + myP.length
+    const restantes      = l.totalCuotas > 0 ? Math.max(0, l.totalCuotas - cuotasPagadas) : 12
+    const cuotasNextYear = Math.min(restantes, 12)
+    return s + (l.cuota ?? 0) * cuotasNextYear
+  }, 0)
+
   // Credit card charges this month
   const activeCreditLines = (creditLines || []).filter(cl => cl.activa !== false)
   const totalCardCharges = activeCreditLines.reduce((sum, cl) => {
@@ -275,6 +284,7 @@ export default function GastosView({
             onEditBill={onEditBill}
             onDeleteBill={onDeleteBill}
             extraMonthly={totalLoanCuota}
+            extraYearly={loanYearlyTotal}
             extraCount={activeLoans.length}
           />
           {/* Loans as fixed expenses */}
