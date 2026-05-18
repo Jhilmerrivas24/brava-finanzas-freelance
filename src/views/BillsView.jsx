@@ -102,14 +102,15 @@ function BillModal({ initial, onSave, onClose }) {
 }
 
 // ── Panel (usado dentro de GastosView) ────────────────────────────────────────
-export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill }) {
+export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill, extraMonthly = 0, extraCount = 0, extraLabel = '' }) {
   const dialog = useDialog()
   const [modal, setModal] = useState(null)
 
   const activeBills = (bills || []).filter(b => b.active !== false)
   const pausedBills = (bills || []).filter(b => b.active === false)
-  const total    = activeBills.reduce((s, b) => s + b.amount, 0)
-  const igvTotal = activeBills
+  const billsOnly = activeBills.reduce((s, b) => s + b.amount, 0)
+  const total     = billsOnly + extraMonthly   // grand total including loans
+  const igvTotal  = activeBills
     .filter(b => b.hasIGV)
     .reduce((s, b) => s + (b.amount - b.amount / 1.18), 0)
 
@@ -164,14 +165,19 @@ export default function BillsView({ bills, onAddBill, onEditBill, onDeleteBill }
           <div className="kpi-label">Total activo / mes</div>
           <div className="kpi-value">{fmtPEN(total, { decimals:0 })}</div>
           <div className="kpi-foot">
-            {activeBills.length} activo{activeBills.length !== 1 ? 's' : ''}
+            {activeBills.length} gasto{activeBills.length !== 1 ? 's' : ''} fijo{activeBills.length !== 1 ? 's' : ''}
+            {extraMonthly > 0 && <span style={{ color:'var(--bad)' }}> + {extraCount} préstamo{extraCount !== 1 ? 's' : ''}</span>}
             {pausedBills.length > 0 && ` · ${pausedBills.length} pausado${pausedBills.length !== 1 ? 's' : ''}`}
           </div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Total activo / año</div>
           <div className="kpi-value">{fmtPEN(total * 12, { decimals:0 })}</div>
-          <div className="kpi-foot">{(bills || []).length} gasto{(bills || []).length !== 1 ? 's' : ''} registrados</div>
+          <div className="kpi-foot">
+            {extraMonthly > 0
+              ? `Gastos S/ ${Math.round(billsOnly).toLocaleString()} + Préstamos S/ ${Math.round(extraMonthly).toLocaleString()}`
+              : `${(bills || []).length} gasto${(bills || []).length !== 1 ? 's' : ''} registrado${(bills || []).length !== 1 ? 's' : ''}`}
+          </div>
         </div>
         {igvTotal > 0
           ? <div className="kpi kpi-accent">

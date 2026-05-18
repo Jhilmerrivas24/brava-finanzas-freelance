@@ -483,6 +483,61 @@ function Dashboard({ signOut, userEmail } = {}) {
       .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
       .reduce((s, l) => s + (l.cuota ?? 0), 0)
 
+    // ── Monthly remanente history ──────────────────────────────────────────────
+    // Helper to check if a date string belongs to a given year/month
+    const isInMonth = (dateStr, y, m) => {
+      if (!dateStr) return false
+      const d = new Date(dateStr)
+      return d.getFullYear() === y && d.getMonth() === m
+    }
+
+    // Build last 6 months history — only include months with actual user data
+    const monthlyHistory = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(thisYear, thisMon - i, 1)
+      const y = d.getFullYear()
+      const m = d.getMonth()
+
+      const invInc = invoices
+        .filter(inv => inv.status === 'paid' && isInMonth(inv.paidAt || inv.issuedDate, y, m))
+        .reduce((s, inv) => s + inv.amount, 0)
+      const FREQ_DIV2 = { monthly:1, bimonthly:2, quarterly:3, annual:12 }
+      const fixedInc = fixedIncome.reduce((s, inc) => s + (inc.amount || 0) / (FREQ_DIV2[inc.frequency] || 1), 0)
+
+      const varAmt = variableExpenses
+        .filter(e => isInMonth(e.date, y, m)).reduce((s, e) => s + e.amount, 0)
+      const dailyAmt = dailyExpenses
+        .filter(e => isInMonth(e.date, y, m)).reduce((s, e) => s + e.amount, 0)
+      const billsAmt = bills.filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
+      const loanAmt  = (loans || [])
+        .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
+        .reduce((s, l) => s + (l.cuota ?? 0), 0)
+
+      // Only count a month if there's actual user-entered variable/daily data or invoice
+      const hasData = invInc > 0 || varAmt > 0 || dailyAmt > 0
+
+      if (hasData || i === 0) {  // always include current month
+        const income   = invInc + (hasData || i === 0 ? fixedInc : 0)
+        const expenses = billsAmt + varAmt + dailyAmt + loanAmt
+        monthlyHistory.push({
+          year: y, month: m,
+          label: MONTHS_SHORT[m],
+          income, expenses,
+          remanente: Math.round((income - expenses) * 100) / 100,
+          hasData,
+        })
+      }
+    }
+
+    // Last month with data remanente (to carry forward)
+    const prevMonthEntry = [...monthlyHistory].reverse().find(mh => mh.hasData && (mh.year < thisYear || mh.month < thisMon))
+    const remanentePrevMonth = prevMonthEntry?.remanente ?? 0
+
+    // Acumulado: sum all months with data before current
+    const remanesteAcumulado = monthlyHistory
+      .filter(mh => mh.hasData && (mh.year < thisYear || mh.month < thisMon))
+      .reduce((s, mh) => s + mh.remanente, 0)
+
     return {
       cashAvailable,
       inThisMonth,
@@ -498,6 +553,9 @@ function Dashboard({ signOut, userEmail } = {}) {
       totalLoanDebt,
       totalMonthlyCuota,
       cashflow: cfData,
+      remanentePrevMonth,
+      remanesteAcumulado,
+      monthlyHistory,
     }
   }, [invoices, bills, fixedIncome, cashflow, accounts, creditLines, loans, settings, quotes, taxPeriods, dailyExpenses, variableExpenses])
 

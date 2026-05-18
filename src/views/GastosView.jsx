@@ -274,6 +274,8 @@ export default function GastosView({
             onAddBill={onAddBill}
             onEditBill={onEditBill}
             onDeleteBill={onDeleteBill}
+            extraMonthly={totalLoanCuota}
+            extraCount={activeLoans.length}
           />
           {/* Loans as fixed expenses */}
           {activeLoans.length > 0 && (

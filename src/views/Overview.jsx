@@ -963,6 +963,85 @@ export default function Overview({
         )
       })()}
 
+      {/* ── Remanente histórico ── */}
+      {(() => {
+        const history = data.monthlyHistory ?? []
+        const monthsWithData = history.filter(m => m.hasData)
+        // Only show section if there's at least one previous month with data
+        if (monthsWithData.length === 0) return null
+
+        const remanentePrev = data.remanentePrevMonth ?? 0
+        const remAcum       = data.remanesteAcumulado ?? 0
+        const currentMonth  = history[history.length - 1]
+        const netActual     = (currentMonth?.income ?? 0) - (currentMonth?.expenses ?? 0)
+        const totalReal     = remAcum + netActual
+
+        const maxAbs = Math.max(...history.map(m => Math.abs(m.remanente)), 1)
+
+        return (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-head" style={{ marginBottom: 14 }}>
+              <div>
+                <div className="card-eyebrow">Acumulado real</div>
+                <h3 className="card-title">Remanente mensual</h3>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>Acumulado histórico</div>
+                <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: totalReal >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+                  {totalReal >= 0 ? '' : '− '}{fmtPEN(Math.abs(totalReal))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bar chart of remanente per month */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 16, minHeight: 80 }}>
+              {history.map((m, i) => {
+                const pct    = maxAbs > 0 ? Math.abs(m.remanente) / maxAbs : 0
+                const isPos  = m.remanente >= 0
+                const isCur  = i === history.length - 1
+                const barH   = Math.max(pct * 64, 4)
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: m.hasData || isCur ? 1 : 0.3 }}>
+                    <div style={{ fontSize: 10, color: isPos ? 'var(--good)' : 'var(--bad)', fontWeight: 700, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                      {m.remanente >= 0 ? '+' : '−'}{Math.abs(Math.round(m.remanente)).toLocaleString()}
+                    </div>
+                    <div style={{ width: '100%', height: barH, borderRadius: 4, background: isCur ? 'var(--accent)' : isPos ? 'var(--good)' : 'var(--bad)', opacity: isCur ? 1 : 0.7, transition: 'height .4s ease' }}/>
+                    <div style={{ fontSize: 10, color: isCur ? 'var(--accent)' : 'var(--ink-mute)', fontWeight: isCur ? 700 : 400 }}>
+                      {m.label}{isCur ? ' ▶' : ''}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Summary row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, padding: '10px 12px', background: 'var(--bg-sunk)', borderRadius: 8, fontSize: 12 }}>
+              <div>
+                <div style={{ color: 'var(--ink-faint)', fontSize: 10, marginBottom: 2 }}>Mes anterior</div>
+                <div className="mono" style={{ fontWeight: 700, color: remanentePrev >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+                  {remanentePrev >= 0 ? '+' : '−'}{fmtPEN(Math.abs(remanentePrev))}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: 'var(--ink-faint)', fontSize: 10, marginBottom: 2 }}>Este mes</div>
+                <div className="mono" style={{ fontWeight: 700, color: netActual >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+                  {netActual >= 0 ? '+' : '−'}{fmtPEN(Math.abs(netActual))}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: 'var(--ink-faint)', fontSize: 10, marginBottom: 2 }}>Total acumulado</div>
+                <div className="mono" style={{ fontWeight: 800, color: totalReal >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+                  {totalReal >= 0 ? '+' : '−'}{fmtPEN(Math.abs(totalReal))}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 8 }}>
+              Solo se muestran meses con datos registrados. El acumulado refleja lo que "sobró o faltó" de cada mes anterior.
+            </div>
+          </div>
+        )
+      })()}
+
       <section className="grid-main">
         <div className="card card-chart">
           <div className="card-head">
