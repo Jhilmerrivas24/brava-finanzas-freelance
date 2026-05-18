@@ -732,9 +732,22 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
   const pagados  = loans.filter(l => l.activo !== false && (l.saldoPendiente ?? 1) === 0)
   const inactive = loans.filter(l => l.activo === false)
 
-  const totalDeuda     = active.reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
-  const totalCuota     = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
-  const totalPagado    = loanPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
+  const totalDeuda  = active.reduce((s, l) => s + (l.saldoPendiente ?? 0), 0)
+  const totalCuota  = active.reduce((s, l) => s + (l.cuota ?? 0), 0)
+
+  // Total amortizado = pagos registrados + cuotas históricas (cuotasYaPagadas)
+  const totalPagadoRegistered = loanPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
+  const totalPagadoHistorico  = loans
+    .filter(l => l.activo !== false && l.schedule && (l.cuotasYaPagadas ?? 0) > 0)
+    .reduce((s, l) => s + Math.round(
+      l.schedule.slice(0, l.cuotasYaPagadas).reduce((si, r) => si + r.total, 0) * 100
+    ) / 100, 0)
+  const totalPagado = Math.round((totalPagadoRegistered + totalPagadoHistorico) * 100) / 100
+
+  // Cuotas pagadas totales (históricas + registradas en app)
+  const totalCuotasPagadas = loanPayments.length
+    + loans.filter(l => l.activo !== false).reduce((s, l) => s + (l.cuotasYaPagadas ?? 0), 0)
+
   const totalIntereses = loans.filter(l => l.activo !== false && l.schedule)
     .reduce((s, l) => s + l.schedule.reduce((si, r) => si + r.interes, 0), 0)
   const totalCostoTotal = loans.filter(l => l.activo !== false && l.montoOriginal)
@@ -803,7 +816,12 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
         <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
           <div className="kpi-label">Total amortizado</div>
           <div className="kpi-value" style={{ color: 'var(--good)' }}>{totalPagado > 0 ? fmtPEN(totalPagado) : '—'}</div>
-          <div className="kpi-foot">{loanPayments.length} pago{loanPayments.length !== 1 ? 's' : ''} registrado{loanPayments.length !== 1 ? 's' : ''}</div>
+          <div className="kpi-foot">
+            {totalCuotasPagadas} cuota{totalCuotasPagadas !== 1 ? 's' : ''} pagada{totalCuotasPagadas !== 1 ? 's' : ''}
+            {totalPagadoHistorico > 0 && (
+              <span style={{ color: 'var(--ink-faint)' }}> · {fmtPEN(totalPagadoHistorico)} histórico</span>
+            )}
+          </div>
         </motion.div>
         {totalIntereses > 0 && (
           <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
