@@ -413,13 +413,18 @@ export default function NewInvoiceModal({ onClose, onCreate, nextId, settings, c
                   <span className="mono ink-strong">{fmtPEN(amtNum)}</span>
                 </div>
               )}
-              {docType !== 'sin_declarar' && docType !== 'boleta' && (
+              {docType === 'factura' && (
                 <div className="invoice-preview-row invoice-preview-row-quiet">
                   <span className="ink-mute">Reserva {taxRate}% impuestos</span>
-                  {/* RH: reserva sobre neto (bruto − 8% retención); factura: sobre base */}
-                  <span className="mono ink-mute">
-                    {fmtPEN((docType === 'rh' ? amtNum * 0.92 : amtNum) * (taxRate/100))}
+                  <span className="mono ink-mute">{fmtPEN(amtNum * (taxRate/100))}</span>
+                </div>
+              )}
+              {docType === 'rh' && !hasRetention && amtNum > 0 && (
+                <div className="invoice-preview-row invoice-preview-row-quiet">
+                  <span className="ink-mute" style={{ fontSize: 11 }}>
+                    Sin retención — recuerda reservar el 8% para SUNAT
                   </span>
+                  <span className="mono ink-mute">{fmtPEN(amtNum * 0.08)}</span>
                 </div>
               )}
               {margin !== null && (

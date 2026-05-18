@@ -18,7 +18,7 @@ const COLORS = ['#c2410c','#15803d','#1d4ed8','#7c3aed','#0f766e','#a16207','#be
 
 function ClientModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(initial ?? {
-    name: '', type: 'Por proyecto', color: COLORS[0], notes: '', active: true,
+    name: '', ruc: '', type: 'Por proyecto', color: COLORS[0], notes: '', active: true,
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const valid = form.name.trim()
@@ -39,6 +39,21 @@ function ClientModal({ initial, onSave, onClose }) {
             <input type="text" value={form.name} onChange={e => set('name', e.target.value)}
               placeholder="Ej. Agencia Creativa XYZ" autoFocus/>
           </div>
+          <div className="field">
+            <label>RUC / DNI <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>(opcional)</span></label>
+            <input
+              type="text"
+              value={form.ruc || ''}
+              onChange={e => set('ruc', e.target.value.replace(/\D/g, '').slice(0, 11))}
+              placeholder="Ej. 20601234567"
+              maxLength={11}
+              style={{ maxWidth: 180 }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3 }}>
+              Se pre-llena automáticamente en cada factura
+            </span>
+          </div>
+
           <div className="field">
             <label>Tipo de relación</label>
             <select value={form.type} onChange={e => set('type', e.target.value)}>

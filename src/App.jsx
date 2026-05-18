@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { viewTransition } from './lib/animations.js'
 import { useToast } from './hooks/useToast.js'
@@ -20,6 +20,7 @@ import AccountsView from './views/AccountsView.jsx'
 import CreditLinesView from './views/CreditLinesView.jsx'
 import LoansView from './views/LoansView.jsx'
 import PaymentsView from './views/PaymentsView.jsx'
+import DailyExpensesView from './views/DailyExpensesView.jsx'
 import NewInvoiceModal from './modals/NewInvoiceModal.jsx'
 import { supabase } from './lib/supabase.js'
 import { useAuth } from './auth/AuthContext.jsx'
@@ -93,6 +94,20 @@ function MarkPaidModal({ invoice, accounts, onConfirm, onClose }) {
             </div>
           </div>
           {/* Account list */}
+          {accounts.length === 0 && (
+            <div style={{
+              padding: '16px', borderRadius: 10,
+              background: 'var(--bg-sunk)', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 22, marginBottom: 8 }}>🏦</div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Sin cuentas registradas</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
+                Agrega una cuenta bancaria en{' '}
+                <strong>Finanzas → Cuentas</strong> para asignar el cobro.
+                Puedes continuar sin asignar cuenta.
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {accounts.map(a => {
               const nombre = a.nombre ?? a.bank ?? '(sin nombre)'
@@ -139,6 +154,143 @@ function MarkPaidModal({ invoice, accounts, onConfirm, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Global Search Modal ───────────────────────────────────────────────────────
+function SearchModal({ query, setQuery, invoices, clients, dailyExpenses, variableExpenses, onGoto, onClose }) {
+  const inputRef = useRef(null)
+  useEffect(() => {
+    // Slight delay to ensure the element is painted before focus
+    const t = setTimeout(() => inputRef.current?.focus(), 30)
+    return () => clearTimeout(t)
+  }, [])
+  const q = query.toLowerCase().trim()
+
+  const results = q.length < 2 ? [] : [
+    ...(invoices || [])
+      .filter(i => i.client?.toLowerCase().includes(q) || i.id?.toLowerCase().includes(q) || i.project?.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map(i => ({ type: 'factura', label: `${i.id} — ${i.client}`, sub: fmtPEN(i.amount), view: 'invoices', emoji: '🧾' })),
+    ...(clients || [])
+      .filter(c => c.name?.toLowerCase().includes(q) || c.ruc?.includes(q))
+      .slice(0, 3)
+      .map(c => ({ type: 'cliente', label: c.name, sub: c.ruc || 'Sin RUC', view: 'clients', emoji: '👤' })),
+    ...(dailyExpenses || [])
+      .filter(e => e.description?.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map(e => ({ type: 'gasto diario', label: e.description, sub: `${fmtPEN(e.amount)} · ${e.date}`, view: 'daily', emoji: '💸' })),
+    ...(variableExpenses || [])
+      .filter(e => e.description?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q))
+      .slice(0, 3)
+      .map(e => ({ type: 'gasto variable', label: e.description, sub: `${fmtPEN(e.amount)} · ${e.category}`, view: 'gastos', emoji: '📋' })),
+  ].slice(0, 10)
+
+  const SECTION_VIEWS = {
+    factura:        { label: 'Facturas',        view: 'invoices' },
+    cliente:        { label: 'Clientes',        view: 'clients'  },
+    'gasto diario': { label: 'Gastos del día',  view: 'daily'    },
+    'gasto variable':{ label: 'Gastos variables', view: 'gastos' },
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        paddingTop: 80,
+      }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: -12, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -8, scale: 0.97 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 30, mass: 0.8 }}
+        style={{
+          width: '100%', maxWidth: 560,
+          background: 'var(--bg-elev)', borderRadius: 16,
+          boxShadow: '0 8px 48px rgba(0,0,0,0.3)',
+          overflow: 'hidden', margin: '0 16px',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Search input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <Icon name="search" size={18} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar facturas, clientes, gastos…"
+            style={{
+              flex: 1, background: 'none', border: 'none', outline: 'none',
+              fontSize: 16, color: 'var(--ink)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ fontSize: 11, color: 'var(--ink-faint)', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-sunk)', cursor: 'pointer' }}
+          >ESC</button>
+        </div>
+
+        {/* Results */}
+        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+          {q.length < 2 ? (
+            <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>
+              Escribe al menos 2 caracteres para buscar
+            </div>
+          ) : results.length === 0 ? (
+            <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>
+              Sin resultados para <strong style={{ color: 'var(--ink)' }}>"{query}"</strong>
+            </div>
+          ) : (
+            results.map((r, i) => (
+              <button
+                key={i}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 18px', background: 'none', border: 'none',
+                  cursor: 'pointer', textAlign: 'left', transition: 'background .1s',
+                  borderBottom: i < results.length - 1 ? '1px solid var(--border)' : 'none',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sunk)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                onClick={() => { onGoto(r.view); onClose() }}
+              >
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{r.emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{r.sub}</div>
+                </div>
+                <span style={{
+                  fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                  background: 'var(--bg-sunk)', color: 'var(--ink-mute)', flexShrink: 0,
+                }}>
+                  {SECTION_VIEWS[r.type]?.label ?? r.type}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Footer hint */}
+        <div style={{ padding: '8px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 12, fontSize: 11, color: 'var(--ink-faint)' }}>
+          <span>↵ Ir a sección</span>
+          <span>ESC Cerrar</span>
+          <span>⌘K o / para abrir</span>
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -192,12 +344,16 @@ function Dashboard({ signOut, userEmail } = {}) {
   const [loanPayments, setLoanPayments]         = useState(() => loadLS('brava:loanPayments', []))
   const [monthlyChecks, setMonthlyChecks]       = useState(() => loadLS('brava:monthlyChecks', {}))
   const [payModal, setPayModal] = useState(null)   // null | { id, amount, client }
+  const [searchOpen, setSearchOpen]   = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [taxPeriods, setTaxPeriods] = useState(() => loadLS('brava:taxPeriods', []))
   const [taxInvoices, setTaxInvoices] = useState(() => loadLS('brava:taxInvoices', []))
   const [taxRH, setTaxRH] = useState(() => loadLS('brava:taxRH', []))
   const [taxPurchases, setTaxPurchases] = useState(() => loadLS('brava:taxPurchases', []))
   const [quotes, setQuotes]                     = useState(() => loadLS('brava:quotes', []))
   const [variableExpenses, setVariableExpenses] = useState(() => loadLS('brava:variableExpenses', []))
+  const [dailyExpenses, setDailyExpenses]       = useState(() => loadLS('brava:dailyExpenses', []))
+  const [creditStatements, setCreditStatements] = useState(() => loadLS('brava:creditStatements', []))
 
   // ── Computed real data for Overview ────────────────────────────────────────
   const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
@@ -226,7 +382,25 @@ function Dashboard({ signOut, userEmail } = {}) {
 
     const inThisMonth  = invoiceIncomeThisMonth + fixedIncomeMonthly
     // Only sum bills that are not explicitly paused / inactive
-    const outThisMonth = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
+    const billsOut = bills.filter(b => b.active !== false).reduce((s, b) => s + (b.amount || 0), 0)
+    const varOut = variableExpenses
+      .filter(e => {
+        if (!e.date) return false
+        const d = new Date(e.date)
+        return d.getMonth() === thisMon && d.getFullYear() === thisYear
+      })
+      .reduce((s, e) => s + (e.amount || 0), 0)
+    const dailyOut = dailyExpenses
+      .filter(e => {
+        if (!e.date) return false
+        const d = new Date(e.date)
+        return d.getMonth() === thisMon && d.getFullYear() === thisYear
+      })
+      .reduce((s, e) => s + (e.amount || 0), 0)
+    const loanCuotaOut = (loans || [])
+      .filter(l => l.activo !== false && (l.saldoPendiente ?? 0) > 0)
+      .reduce((s, l) => s + (l.cuota ?? 0), 0)
+    const outThisMonth = billsOut + varOut + dailyOut + loanCuotaOut
 
     const cashAvailable = accounts.reduce((s, a) => s + (a.saldo ?? a.balance ?? 0), 0)
 
@@ -325,12 +499,39 @@ function Dashboard({ signOut, userEmail } = {}) {
       totalMonthlyCuota,
       cashflow: cfData,
     }
-  }, [invoices, bills, fixedIncome, cashflow, accounts, creditLines, loans, settings, quotes, taxPeriods])
+  }, [invoices, bills, fixedIncome, cashflow, accounts, creditLines, loans, settings, quotes, taxPeriods, dailyExpenses, variableExpenses])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     localStorage.setItem('brava:dark', dark ? '1' : '0')
   }, [dark])
+
+  // ⌘K / Ctrl+K / / opens global search
+  useEffect(() => {
+    function onKey(e) {
+      // Open: ⌘K or Ctrl+K or just "/" when not typing in an input/textarea
+      const inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        e.stopPropagation()
+        setSearchOpen(true)
+        setSearchQuery('')
+        return
+      }
+      if (e.key === '/' && !inInput) {
+        e.preventDefault()
+        setSearchOpen(true)
+        setSearchQuery('')
+        return
+      }
+      if (e.key === 'Escape') {
+        setSearchOpen(false)
+        setSearchQuery('')
+      }
+    }
+    document.addEventListener('keydown', onKey, true) // capture phase = first
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [])
 
   // ── Load data from Supabase on mount (when user is authenticated) ──────────
   useEffect(() => {
@@ -347,6 +548,7 @@ function Dashboard({ signOut, userEmail } = {}) {
         'variable_expenses','goals','cashflow','fixed_income',
         'credit_lines','loans','loan_payments','account_movements',
         'tax_periods','tax_invoices','tax_rh','tax_purchases',
+        'daily_expenses','credit_statements',
       ])
 
       // Helper: fetch table, map local_id → id for compatibility
@@ -370,12 +572,14 @@ function Dashboard({ signOut, userEmail } = {}) {
         sbVarExp, sbGoals, sbCashflow, sbFixedIncome, sbAccounts,
         sbCreditLines, sbLoans, sbLoanPayments, sbAccountMovements,
         sbTaxPeriods, sbTaxInvoices, sbTaxRH, sbTaxPurchases,
+        sbDailyExpenses, sbCreditStatements,
       ] = await Promise.all([
         fetch('invoices'), fetch('clients'), fetch('quotes'), fetch('bills'),
         fetch('variable_expenses'), fetch('goals'), fetch('cashflow'),
         fetch('fixed_income'), fetch('accounts'),
         fetch('credit_lines'), fetch('loans'), fetch('loan_payments'), fetch('account_movements'),
         fetch('tax_periods'), fetch('tax_invoices'), fetch('tax_rh'), fetch('tax_purchases'),
+        fetch('daily_expenses'), fetch('credit_statements'),
       ])
 
       // Smart merge: if Supabase has rows → use them (source of truth).
@@ -451,6 +655,8 @@ function Dashboard({ signOut, userEmail } = {}) {
         mergeOrMigrate(sbTaxInvoices,     setTaxInvoices,       'brava:taxInvoices',      'tax_invoices'),
         mergeOrMigrate(sbTaxRH,           setTaxRH,             'brava:taxRH',            'tax_rh'),
         mergeOrMigrate(sbTaxPurchases,    setTaxPurchases,      'brava:taxPurchases',     'tax_purchases'),
+        mergeOrMigrate(sbDailyExpenses,      setDailyExpenses,      'brava:dailyExpenses',      'daily_expenses'),
+        mergeOrMigrate(sbCreditStatements,   setCreditStatements,   'brava:creditStatements',   'credit_statements'),
       ])
 
     }
@@ -465,6 +671,7 @@ function Dashboard({ signOut, userEmail } = {}) {
     'variable_expenses','goals','cashflow','fixed_income',
     'credit_lines','loans','loan_payments','account_movements',
     'tax_periods','tax_invoices','tax_rh','tax_purchases',
+    'daily_expenses','credit_statements',
   ])
 
   // ── Fire-and-forget Supabase write helper ─────────────────────────────────
@@ -511,6 +718,7 @@ function Dashboard({ signOut, userEmail } = {}) {
   useEffect(() => { localStorage.setItem('brava:accounts',         JSON.stringify(accounts))         }, [accounts])
   useEffect(() => { localStorage.setItem('brava:accountMovements', JSON.stringify(accountMovements)) }, [accountMovements])
   useEffect(() => { localStorage.setItem('brava:creditLines',      JSON.stringify(creditLines))      }, [creditLines])
+  useEffect(() => { localStorage.setItem('brava:creditStatements', JSON.stringify(creditStatements)) }, [creditStatements])
   useEffect(() => { localStorage.setItem('brava:loans',            JSON.stringify(loans))            }, [loans])
   useEffect(() => { localStorage.setItem('brava:loanPayments',     JSON.stringify(loanPayments))     }, [loanPayments])
   useEffect(() => { localStorage.setItem('brava:monthlyChecks',    JSON.stringify(monthlyChecks))    }, [monthlyChecks])
@@ -520,6 +728,7 @@ function Dashboard({ signOut, userEmail } = {}) {
   useEffect(() => { localStorage.setItem('brava:taxPurchases', JSON.stringify(taxPurchases)) }, [taxPurchases])
   useEffect(() => { localStorage.setItem('brava:quotes',           JSON.stringify(quotes))           }, [quotes])
   useEffect(() => { localStorage.setItem('brava:variableExpenses', JSON.stringify(variableExpenses)) }, [variableExpenses])
+  useEffect(() => { localStorage.setItem('brava:dailyExpenses',    JSON.stringify(dailyExpenses))    }, [dailyExpenses])
 
   async function handleSaveSettings(newSettings) {
     setSettings(newSettings)
@@ -596,6 +805,17 @@ function Dashboard({ signOut, userEmail } = {}) {
   const deleteInv = (id) => {
     setInvoices(invs => invs.filter(i => i.id !== id))
     sbWrite('invoices', 'delete', null, id)
+    // Cascade: remove linked tax records created from this invoice
+    const orphTI = taxInvoices.filter(t => t.fromInvoiceId === id)
+    const orphRH = taxRH.filter(t => t.fromInvoiceId === id)
+    if (orphTI.length > 0) {
+      setTaxInvoices(xs => xs.filter(t => t.fromInvoiceId !== id))
+      orphTI.forEach(t => sbWrite('tax_invoices', 'delete', null, t.id))
+    }
+    if (orphRH.length > 0) {
+      setTaxRH(xs => xs.filter(t => t.fromInvoiceId !== id))
+      orphRH.forEach(t => sbWrite('tax_rh', 'delete', null, t.id))
+    }
     toast.success('Factura eliminada')
   }
 
@@ -646,12 +866,37 @@ function Dashboard({ signOut, userEmail } = {}) {
   // Credit lines CRUD
   const addCreditLine    = (cl) => { setCreditLines(cs => [...cs, cl]); sbWrite('credit_lines', 'insert', cl); toast.success('Tarjeta agregada', cl.nombre) }
   const editCreditLine   = (cl) => { setCreditLines(cs => cs.map(x => x.id === cl.id ? cl : x)); sbWrite('credit_lines', 'update', cl); toast.success('Tarjeta actualizada', cl.nombre) }
-  const deleteCreditLine = (id)  => { setCreditLines(cs => cs.filter(x => x.id !== id)); sbWrite('credit_lines', 'delete', null, id); toast.success('Tarjeta eliminada') }
+  const deleteCreditLine = (id) => {
+    setCreditLines(cs => cs.filter(x => x.id !== id))
+    sbWrite('credit_lines', 'delete', null, id)
+    // Cascade: remove monthly statements for this card
+    const orphStmts = creditStatements.filter(s => s.cardId === id)
+    if (orphStmts.length > 0) {
+      setCreditStatements(ss => ss.filter(s => s.cardId !== id))
+      orphStmts.forEach(s => sbWrite('credit_statements', 'delete', null, s.id))
+    }
+    toast.success('Tarjeta eliminada')
+  }
+
+  // Credit statements CRUD
+  const addCreditStatement    = (s) => { setCreditStatements(ss => [...ss, s]); sbWrite('credit_statements', 'insert', s) }
+  const editCreditStatement   = (s) => { setCreditStatements(ss => ss.map(x => x.id === s.id ? s : x)); sbWrite('credit_statements', 'update', s) }
+  const deleteCreditStatement = (id) => { setCreditStatements(ss => ss.filter(x => x.id !== id)); sbWrite('credit_statements', 'delete', null, id) }
 
   // Loans CRUD
   const addLoan    = (l) => { setLoans(ls => [...ls, l]); sbWrite('loans', 'insert', l); toast.success('Préstamo registrado', l.nombre) }
   const editLoan   = (l) => { setLoans(ls => ls.map(x => x.id === l.id ? l : x)); sbWrite('loans', 'update', l); toast.success('Préstamo actualizado', l.nombre) }
-  const deleteLoan = (id) => { setLoans(ls => ls.filter(x => x.id !== id)); sbWrite('loans', 'delete', null, id); toast.success('Préstamo eliminado') }
+  const deleteLoan = (id) => {
+    setLoans(ls => ls.filter(x => x.id !== id))
+    sbWrite('loans', 'delete', null, id)
+    // Cascade: remove all payment records for this loan
+    const orphPayments = loanPayments.filter(p => p.loanId === id)
+    if (orphPayments.length > 0) {
+      setLoanPayments(ps => ps.filter(p => p.loanId !== id))
+      orphPayments.forEach(p => sbWrite('loan_payments', 'delete', null, p.id))
+    }
+    toast.success('Préstamo eliminado')
+  }
 
   // Register a loan payment (reduces saldoPendiente + optionally debits account)
   function registerLoanPayment({ loanId, amount, capital, interes, date, notes, accountId }) {
@@ -764,6 +1009,92 @@ function Dashboard({ signOut, userEmail } = {}) {
     sbWrite('variable_expenses', 'delete', null, id)
     if (expense?.paymentMethod?.type === 'tarjeta' && expense.paymentMethod.creditLineId) {
       updateCreditUsado(expense.paymentMethod.creditLineId, -(expense.amount))
+    }
+    toast.success('Gasto eliminado')
+  }
+
+  // Daily expenses CRUD (+ account saldo deduction + credit used increment)
+  const addDailyExpense = (e) => {
+    setDailyExpenses(es => [e, ...es])
+    sbWrite('daily_expenses', 'insert', e)
+    // Debit account saldo
+    if (e.sourceType === 'account' && e.sourceId) {
+      const acc = accounts.find(a => a.id === e.sourceId)
+      if (acc) {
+        const newSaldo = (acc.saldo ?? acc.balance ?? 0) - e.amount
+        setAccounts(as => as.map(a => a.id === e.sourceId ? { ...a, saldo: newSaldo, balance: newSaldo } : a))
+        sbWrite('accounts', 'update', { id: e.sourceId, saldo: newSaldo, balance: newSaldo })
+      }
+    }
+    // Increment credit used
+    if (e.sourceType === 'credit' && e.sourceId) {
+      updateCreditUsado(e.sourceId, e.amount)
+    }
+    toast.success('Gasto registrado', e.description)
+  }
+
+  const editDailyExpense = (e) => {
+    const old = dailyExpenses.find(x => x.id === e.id)
+    setDailyExpenses(es => es.map(x => x.id === e.id ? e : x))
+    sbWrite('daily_expenses', 'update', e)
+
+    // Reverse old account debit, apply new
+    const oldAccId = old?.sourceType === 'account' ? old.sourceId : null
+    const newAccId = e.sourceType   === 'account' ? e.sourceId   : null
+    if (oldAccId && oldAccId === newAccId) {
+      const acc = accounts.find(a => a.id === oldAccId)
+      if (acc) {
+        const newSaldo = (acc.saldo ?? acc.balance ?? 0) + (old?.amount ?? 0) - e.amount
+        setAccounts(as => as.map(a => a.id === oldAccId ? { ...a, saldo: newSaldo, balance: newSaldo } : a))
+        sbWrite('accounts', 'update', { id: oldAccId, saldo: newSaldo, balance: newSaldo })
+      }
+    } else {
+      if (oldAccId) {
+        const acc = accounts.find(a => a.id === oldAccId)
+        if (acc) {
+          const ns = (acc.saldo ?? acc.balance ?? 0) + (old?.amount ?? 0)
+          setAccounts(as => as.map(a => a.id === oldAccId ? { ...a, saldo: ns, balance: ns } : a))
+          sbWrite('accounts', 'update', { id: oldAccId, saldo: ns, balance: ns })
+        }
+      }
+      if (newAccId) {
+        const acc = accounts.find(a => a.id === newAccId)
+        if (acc) {
+          const ns = (acc.saldo ?? acc.balance ?? 0) - e.amount
+          setAccounts(as => as.map(a => a.id === newAccId ? { ...a, saldo: ns, balance: ns } : a))
+          sbWrite('accounts', 'update', { id: newAccId, saldo: ns, balance: ns })
+        }
+      }
+    }
+
+    // Reverse old credit, apply new
+    const oldClId = old?.sourceType === 'credit' ? old.sourceId : null
+    const newClId = e.sourceType   === 'credit' ? e.sourceId   : null
+    if (oldClId === newClId && oldClId) {
+      updateCreditUsado(oldClId, e.amount - (old?.amount ?? 0))
+    } else {
+      if (oldClId) updateCreditUsado(oldClId, -(old?.amount ?? 0))
+      if (newClId) updateCreditUsado(newClId, e.amount)
+    }
+    toast.success('Gasto actualizado')
+  }
+
+  const deleteDailyExpense = (id) => {
+    const expense = dailyExpenses.find(e => e.id === id)
+    setDailyExpenses(es => es.filter(x => x.id !== id))
+    sbWrite('daily_expenses', 'delete', null, id)
+    // Reverse account debit
+    if (expense?.sourceType === 'account' && expense.sourceId) {
+      const acc = accounts.find(a => a.id === expense.sourceId)
+      if (acc) {
+        const newSaldo = (acc.saldo ?? acc.balance ?? 0) + expense.amount
+        setAccounts(as => as.map(a => a.id === expense.sourceId ? { ...a, saldo: newSaldo, balance: newSaldo } : a))
+        sbWrite('accounts', 'update', { id: expense.sourceId, saldo: newSaldo, balance: newSaldo })
+      }
+    }
+    // Reverse credit used
+    if (expense?.sourceType === 'credit' && expense.sourceId) {
+      updateCreditUsado(expense.sourceId, -expense.amount)
     }
     toast.success('Gasto eliminado')
   }
@@ -887,7 +1218,7 @@ function Dashboard({ signOut, userEmail } = {}) {
   const viewProps = {
     data, invoices, settings,
     bills, fixedIncome, cashflow, goals, clients, accounts,
-    variableExpenses, quotes,
+    variableExpenses, quotes, dailyExpenses,
     onMarkPaid:   markPaid,
     onNewInvoice: () => setModalOpen(true),
     onGoto:       setView,
@@ -984,18 +1315,27 @@ function Dashboard({ signOut, userEmail } = {}) {
           {/* Mobile brand name (replaces search on narrow screens) */}
           <span className="topbar-brand-mobile">Brava</span>
 
-          <div className="topbar-search">
+          <button
+            className="topbar-search"
+            onClick={() => { setSearchOpen(true); setSearchQuery('') }}
+            style={{ cursor: 'text', textAlign: 'left', background: 'var(--bg-elev)' }}
+            type="button"
+          >
             <Icon name="search" size={14} />
-            <input type="text" placeholder="Buscar facturas, clientes, transacciones…" />
-            <span className="kbd">⌘K</span>
-          </div>
+            <span style={{ fontSize: 13, color: 'var(--ink-faint)', flex: 1, pointerEvents: 'none' }}>
+              Buscar facturas, clientes, gastos…
+            </span>
+            <span className="kbd" style={{ pointerEvents: 'none' }}>⌘K</span>
+          </button>
           <div className="topbar-actions">
             <button className="icon-btn" onClick={() => setDark(d => !d)} title="Cambiar tema">
               <Icon name={dark ? 'sun' : 'moon'} size={16} />
             </button>
             <button className="icon-btn" title="Notificaciones">
               <Icon name="bell" size={16} />
-              <span className="dot-badge" />
+              {(sidebarBadges.invoices + sidebarBadges.payments) > 0 && (
+                <span className="dot-badge" />
+              )}
             </button>
             <button
               className="topbar-user"
@@ -1077,11 +1417,17 @@ function Dashboard({ signOut, userEmail } = {}) {
                   creditLines={creditLines}
                   accounts={accounts}
                   variableExpenses={variableExpenses}
+                  dailyExpenses={dailyExpenses}
+                  creditStatements={creditStatements}
                   onAddCreditLine={addCreditLine}
                   onEditCreditLine={editCreditLine}
                   onDeleteCreditLine={deleteCreditLine}
                   onUpdateCreditUsado={updateCreditUsado}
                   onAddAccountMovement={addAccountMovement}
+                  onAddVariableExpense={addVariableExpense}
+                  onAddCreditStatement={addCreditStatement}
+                  onEditCreditStatement={editCreditStatement}
+                  onDeleteCreditStatement={deleteCreditStatement}
                 />
               )}
               {view === 'invoices'  && <InvoicesView {...viewProps} taxInvoices={taxInvoices} taxRH={taxRH} />}
@@ -1105,6 +1451,7 @@ function Dashboard({ signOut, userEmail } = {}) {
                   fixedIncome={fixedIncome}
                   bills={bills}
                   variableExpenses={variableExpenses}
+                  dailyExpenses={dailyExpenses}
                 />
               )}
               {view === 'taxes' && (
@@ -1156,8 +1503,23 @@ function Dashboard({ signOut, userEmail } = {}) {
                   onAddVariableExpense={addVariableExpense}
                   onEditVariableExpense={editVariableExpense}
                   onDeleteVariableExpense={deleteVariableExpense}
+                  dailyExpenses={dailyExpenses}
                   accounts={accounts}
                   creditLines={creditLines}
+                  creditStatements={creditStatements}
+                  loans={loans}
+                  loanPayments={loanPayments}
+                  onGoto={setView}
+                />
+              )}
+              {view === 'daily'     && (
+                <DailyExpensesView
+                  dailyExpenses={dailyExpenses}
+                  accounts={accounts}
+                  creditLines={creditLines}
+                  onAdd={addDailyExpense}
+                  onEdit={editDailyExpense}
+                  onDelete={deleteDailyExpense}
                 />
               )}
               {view === 'ingresos'  && (
@@ -1195,6 +1557,21 @@ function Dashboard({ signOut, userEmail } = {}) {
           onClose={() => setPayModal(null)}
         />
       )}
+
+      <AnimatePresence>
+        {searchOpen && (
+          <SearchModal
+            query={searchQuery}
+            setQuery={setSearchQuery}
+            invoices={invoices}
+            clients={clients}
+            dailyExpenses={dailyExpenses}
+            variableExpenses={variableExpenses}
+            onGoto={(v) => { setView(v); setSidebarOpen(false) }}
+            onClose={() => { setSearchOpen(false); setSearchQuery('') }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

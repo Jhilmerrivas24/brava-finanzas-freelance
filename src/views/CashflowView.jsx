@@ -9,7 +9,7 @@ const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct
 const FREQ_DIV     = { monthly:1, bimonthly:2, quarterly:3, annual:12 }
 
 // ── Auto-compute inc / exp from real data per month ───────────────────────────
-function computeAutoData(invoices, fixedIncome, bills, variableExpenses) {
+function computeAutoData(invoices, fixedIncome, bills, variableExpenses, dailyExpenses) {
   const fixedMonthly = (fixedIncome||[]).reduce(
     (s, inc) => s + (inc.amount||0) / (FREQ_DIV[inc.frequency]||1), 0
   )
@@ -34,6 +34,14 @@ function computeAutoData(invoices, fixedIncome, bills, variableExpenses) {
 
   // Variable expenses → exp (per date month)
   ;(variableExpenses||[]).forEach(exp => {
+    if (!exp.date) return
+    const d = new Date(exp.date)
+    const k = ensure(d.getFullYear(), d.getMonth())
+    map[k].varExp += exp.amount || 0
+  })
+
+  // Daily expenses → exp (per date month)
+  ;(dailyExpenses||[]).forEach(exp => {
     if (!exp.date) return
     const d = new Date(exp.date)
     const k = ensure(d.getFullYear(), d.getMonth())
@@ -178,15 +186,15 @@ function KpiCard({ label, value, foot, accent }) {
 // ── Main view ─────────────────────────────────────────────────────────────────
 export default function CashflowView({
   cashflow, onAddCashflow, onEditCashflow, onDeleteCashflow,
-  invoices = [], fixedIncome = [], bills = [], variableExpenses = [],
+  invoices = [], fixedIncome = [], bills = [], variableExpenses = [], dailyExpenses = [],
 }) {
   const dialog = useDialog()
   const [modal, setModal] = useState(null)  // null | 'new' | { entry, autoRow? }
 
   // ── Computed auto data ────────────────────────────────────────────────────
   const autoData = useMemo(
-    () => computeAutoData(invoices, fixedIncome, bills, variableExpenses),
-    [invoices, fixedIncome, bills, variableExpenses]
+    () => computeAutoData(invoices, fixedIncome, bills, variableExpenses, dailyExpenses),
+    [invoices, fixedIncome, bills, variableExpenses, dailyExpenses]
   )
 
   // ── Merge: all months from auto OR stored cashflow ────────────────────────

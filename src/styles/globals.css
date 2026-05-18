@@ -1809,3 +1809,27 @@ input, select { font-family: inherit; }
 @media (max-width: 768px) {
   .view { padding-bottom: max(80px, env(safe-area-inset-bottom, 80px)); }
 }
+
+/* ── Daily expense modal: category grid 2-col on narrow screens ── */
+@media (max-width: 420px) {
+  .cat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+/* ── Daily expenses view: compact expense rows on mobile ── */
+@media (max-width: 480px) {
+  .daily-expense-row { flex-wrap: wrap; }
+  .daily-expense-row .daily-source { display: none; }
+}
+
+/* ── Modal: ensure full scroll on very small screens ── */
+@media (max-width: 480px) {
+  .modal {
+    max-height: 95dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    margin-bottom: 0;
+    align-self: flex-end;
+  }
+  .modal-backdrop {
+    align-items: flex-end;
+  }
+}

@@ -398,11 +398,11 @@ function DayGroup({ dateStr, expenses, isToday, onEdit, onDelete, onAddQuick, on
                         <td><span className="pill pill-mute" style={{ fontSize:10 }}>{e.category}</span></td>
                         <td className="num-col mono" style={{ fontWeight:700 }}>{fmtPEN(e.amount)}</td>
                         <td className="row-actions" style={{ display:'flex', gap:4, justifyContent:'flex-end' }}>
-                          <button className="btn btn-xs btn-ghost" onClick={() => onEdit(e)}>
-                            <Icon name="settings" size={12}/>
+                          <button className="btn btn-xs btn-ghost" onClick={() => onEdit(e)} title="Editar">
+                            <Icon name="edit" size={13}/>
                           </button>
-                          <button className="btn btn-xs btn-quiet" style={{ color:'var(--bad)' }} onClick={() => onDelete(e)}>
-                            <Icon name="close" size={12}/>
+                          <button className="btn btn-xs btn-quiet" style={{ color:'var(--bad)' }} onClick={() => onDelete(e)} title="Eliminar">
+                            <Icon name="trash" size={13}/>
                           </button>
                         </td>
                       </tr>

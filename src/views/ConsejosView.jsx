@@ -9,10 +9,20 @@ function generateTips(invoices, settings, bills, goals) {
   const overdue = invoices.filter(i => i.status === 'overdue')
   const pending = invoices.filter(i => i.status === 'pending')
 
+  // Use last 3 months average income for ratio comparisons (avoids all-time skew)
+  const now = new Date()
+  const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+  const recentPaid = paid.filter(i => {
+    const dateStr = i.paidAt || i.issuedDate
+    if (!dateStr) return false
+    return new Date(dateStr) >= threeMonthsAgo
+  })
+  const avgMonthlyIncome = recentPaid.reduce((s, i) => s + i.amount, 0) / 3
+
   const totalIncome  = paid.reduce((s, i) => s + i.amount, 0)
   const totalOverdue = overdue.reduce((s, i) => s + i.amount, 0)
   const totalPending = pending.reduce((s, i) => s + i.amount, 0)
-  const totalBills   = (bills || []).reduce((s, b) => s + b.amount, 0)
+  const totalBills   = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
   const taxRate      = settings?.taxRate ?? 30
 
   // ── Facturas vencidas ─────────────────────────
@@ -35,21 +45,21 @@ function generateTips(invoices, settings, bills, goals) {
     })
   }
 
-  // ── Gastos fijos vs ingresos ──────────────────
-  if (totalIncome > 0 && totalBills > 0) {
-    const billsRatio = (totalBills / totalIncome) * 100
+  // ── Gastos fijos vs ingresos (últimos 3 meses) ──────────────────
+  if (avgMonthlyIncome > 0 && totalBills > 0) {
+    const billsRatio = (totalBills / avgMonthlyIncome) * 100
     if (billsRatio > 40) {
       tips.push({
         id: 'bills-high', type: 'warn', icon: 'bills',
         title: 'Gastos fijos muy altos para tus ingresos',
-        body: `Tus gastos fijos (${fmtPEN(totalBills)}/mes) representan el ${billsRatio.toFixed(0)}% de lo que cobras. Lo recomendable es que no superen el 30–35%. Revisa si puedes cancelar alguna suscripción.`,
+        body: `Tus gastos fijos (${fmtPEN(totalBills)}/mes) representan el ${billsRatio.toFixed(0)}% de tu ingreso mensual promedio de los últimos 3 meses. Lo recomendable es que no superen el 30–35%.`,
         action: 'Revisar gastos fijos', view: 'bills',
       })
     } else {
       tips.push({
         id: 'bills-ok', type: 'good', icon: 'bills',
         title: 'Gastos fijos bajo control',
-        body: `Tus gastos recurrentes son solo el ${billsRatio.toFixed(0)}% de tus ingresos. Buen trabajo manteniendo los costos bajos.`,
+        body: `Tus gastos recurrentes son solo el ${billsRatio.toFixed(0)}% de tu ingreso mensual promedio. Buen trabajo manteniendo los costos bajos.`,
       })
     }
   }

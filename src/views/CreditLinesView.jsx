@@ -1,15 +1,41 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import Icon from '../components/Icon.jsx'
-import Bar from '../components/Bar.jsx'
 import { fmtPEN } from '../data.js'
 import { useDialog } from '../hooks/useDialog.js'
 import { motion } from 'framer-motion'
-import { staggerContainer, staggerItem, hoverLift, tapScale } from '../lib/animations.js'
+import { staggerContainer, staggerItem, hoverLift } from '../lib/animations.js'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
 const TIPO_LABEL = { visa: 'Visa', mastercard: 'Mastercard', amex: 'Amex', otro: 'Tarjeta' }
 const TIPO_COLOR = { visa: '#1a1f71', mastercard: '#eb001b', amex: '#007bc1', otro: '#6b7280' }
 const TIPO_BG    = { visa: '#e8eaf6', mastercard: '#fce4ec', amex: '#e1f5fe', otro: '#f3f4f6' }
+const MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+function periodLabel(yyyymm) {
+  if (!yyyymm) return ''
+  const [y, m] = yyyymm.split('-')
+  return `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`
+}
+
+function currentPeriod() {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
+}
+
+function computeAutoCharges(cardId, period, dailyExpenses, variableExpenses) {
+  const [y, m] = period.split('-').map(Number)
+  const isInPeriod = (dateStr) => {
+    if (!dateStr) return false
+    const d = new Date(dateStr)
+    return d.getFullYear() === y && (d.getMonth() + 1) === m
+  }
+  const daily = (dailyExpenses || [])
+    .filter(e => e.sourceType === 'credit' && e.sourceId === cardId && isInPeriod(e.date))
+    .reduce((s, e) => s + (e.amount || 0), 0)
+  const varr = (variableExpenses || [])
+    .filter(e => e.paymentMethod?.type === 'tarjeta' && e.paymentMethod.creditLineId === cardId && isInPeriod(e.date))
+    .reduce((s, e) => s + (e.amount || 0), 0)
+  return daily + varr
+}
 
 function utilizationColor(pct) {
   if (pct < 0.3) return 'var(--good)'
@@ -17,14 +43,13 @@ function utilizationColor(pct) {
   return 'var(--bad)'
 }
 
-// ── Credit line CRUD modal ────────────────────────────────────────────────────
+// ── CreditLine profile modal ──────────────────────────────────────────────────
 function CreditLineModal({ initial, onSave, onClose }) {
   const defaults = {
     nombre:     initial?.nombre     ?? '',
     banco:      initial?.banco      ?? '',
     tipo:       initial?.tipo       ?? 'visa',
     limite:     String(initial?.limite   ?? ''),
-    usado:      String(initial?.usado    ?? '0'),
     moneda:     initial?.moneda     ?? 'PEN',
     fechaCorte: String(initial?.fechaCorte ?? ''),
     fechaPago:  String(initial?.fechaPago  ?? ''),
@@ -34,11 +59,6 @@ function CreditLineModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(defaults)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const valid = form.nombre.trim() && Number(form.limite) > 0
-
-  const limite   = Number(form.limite)  || 0
-  const usado    = Number(form.usado)   || 0
-  const disponible = Math.max(0, limite - usado)
-  const pct      = limite > 0 ? usado / limite : 0
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -93,57 +113,26 @@ function CreditLineModal({ initial, onSave, onClose }) {
               </div>
             </div>
             <div className="field">
-              <label>Saldo usado actual</label>
+              <label>Pago mínimo mensual <span style={{ fontWeight:400, color:'var(--ink-mute)', fontSize:11 }}>(opcional)</span></label>
               <div className="amount-input">
                 <span className="amount-prefix mono">{form.moneda === 'USD' ? 'US$' : 'S/'}</span>
                 <input type="text" inputMode="decimal" className="amount-field mono"
-                  value={form.usado} onChange={e => set('usado', e.target.value)} placeholder="0.00"/>
+                  value={form.pagoMinimo} onChange={e => set('pagoMinimo', e.target.value)} placeholder="0.00"/>
               </div>
             </div>
           </div>
-
-          {/* Preview bar */}
-          {limite > 0 && (
-            <div style={{
-              padding: '12px 14px', background: 'var(--bg-sunk)', borderRadius: 8, marginBottom: 4,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8 }}>
-                <span>Usado: {fmtPEN(usado)}</span>
-                <span style={{ color: utilizationColor(pct), fontWeight: 700 }}>{(pct * 100).toFixed(0)}%</span>
-                <span>Disponible: {fmtPEN(disponible)}</span>
-              </div>
-              <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', width: `${Math.min(pct * 100, 100)}%`,
-                  background: utilizationColor(pct),
-                  transition: 'width 0.3s ease',
-                  borderRadius: 3,
-                }} />
-              </div>
-            </div>
-          )}
-
           <div className="field-row">
             <div className="field">
               <label>Día de corte</label>
               <input type="number" min={1} max={31} value={form.fechaCorte}
-                onChange={e => set('fechaCorte', e.target.value)} placeholder="Ej. 15" />
+                onChange={e => set('fechaCorte', e.target.value)} placeholder="Ej. 26" />
             </div>
             <div className="field">
               <label>Día de pago</label>
               <input type="number" min={1} max={31} value={form.fechaPago}
-                onChange={e => set('fechaPago', e.target.value)} placeholder="Ej. 25" />
+                onChange={e => set('fechaPago', e.target.value)} placeholder="Ej. 20" />
             </div>
           </div>
-          <div className="field">
-            <label>Pago mínimo mensual <span style={{ fontWeight:400, color:'var(--ink-mute)', fontSize:11 }}>(opcional)</span></label>
-            <div className="amount-input">
-              <span className="amount-prefix mono">{form.moneda === 'USD' ? 'US$' : 'S/'}</span>
-              <input type="text" inputMode="decimal" className="amount-field mono"
-                value={form.pagoMinimo} onChange={e => set('pagoMinimo', e.target.value)} placeholder="0.00"/>
-            </div>
-          </div>
-
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input type="checkbox" checked={form.activa} onChange={e => set('activa', e.target.checked)} />
             <span>Tarjeta activa</span>
@@ -156,8 +145,7 @@ function CreditLineModal({ initial, onSave, onClose }) {
               nombre:     form.nombre,
               banco:      form.banco,
               tipo:       form.tipo,
-              limite:     Number(form.limite)     || 0,
-              usado:      Number(form.usado)      || 0,
+              limite:     Number(form.limite) || 0,
               moneda:     form.moneda,
               fechaCorte: Number(form.fechaCorte) || null,
               fechaPago:  Number(form.fechaPago)  || null,
@@ -172,67 +160,72 @@ function CreditLineModal({ initial, onSave, onClose }) {
   )
 }
 
-// ── Payment registration modal ────────────────────────────────────────────────
-function PaymentModal({ creditLine, accounts, onConfirm, onClose }) {
-  const [amount, setAmount]       = useState('')
-  const [accountId, setAccountId] = useState(null)
-  const valid = Number(amount) > 0
+// ── Payment modal ─────────────────────────────────────────────────────────────
+function PayStatementModal({ cl, statement, autoCharges, accounts, onConfirm, onClose }) {
+  const totalCharges = statement?.chargesManual ?? autoCharges
+  const [amount, setAmount] = useState(String(totalCharges || ''))
+  const [date, setDate]     = useState(new Date().toISOString().split('T')[0])
+  const [accountId, setAccountId] = useState('')
+  const [notes, setNotes]   = useState('')
+  const valid = Number(amount) > 0 && date
 
-  const activeAccounts = accounts.filter(a => a.activa !== false)
+  const activeAccounts = (accounts || []).filter(a => a.activa !== false)
+  const period = statement?.period ?? currentPeriod()
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">{creditLine.nombre} · Pago</div>
+            <div className="eyebrow">{cl.nombre} · {periodLabel(period)}</div>
             <h2 className="modal-title">Registrar pago</h2>
           </div>
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
         </div>
         <div className="modal-body">
-          {/* Current state */}
-          <div style={{ padding: '10px 14px', background: 'var(--bg-elev)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ color: 'var(--ink-mute)' }}>Saldo actual</span>
-              <span className="mono" style={{ color: 'var(--bad)', fontWeight: 700 }}>{fmtPEN(creditLine.usado ?? 0)}</span>
+          <div style={{ padding: '10px 14px', background: 'var(--bg-sunk)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ color: 'var(--ink-mute)' }}>Cargos del periodo</span>
+              <span className="mono" style={{ fontWeight: 700 }}>{fmtPEN(totalCharges)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--ink-mute)' }}>Tras el pago</span>
-              <span className="mono" style={{ fontWeight: 600, color: 'var(--good)' }}>
-                {fmtPEN(Math.max(0, (creditLine.usado ?? 0) - (Number(amount) || 0)))}
-              </span>
+            {statement?.chargesManual != null && (
+              <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Monto manual registrado (estado de cuenta)</div>
+            )}
+          </div>
+          <div className="field-row">
+            <div className="field" style={{ flex: 2 }}>
+              <label>Monto pagado</label>
+              <div className="amount-input">
+                <span className="amount-prefix mono">S/</span>
+                <input type="text" inputMode="decimal" className="amount-field mono" autoFocus
+                  value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"/>
+              </div>
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label>Fecha de pago</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
           </div>
-
-          <div className="field">
-            <label>Monto pagado</label>
-            <div className="amount-input">
-              <span className="amount-prefix mono">S/</span>
-              <input type="text" inputMode="decimal" className="amount-field mono"
-                value={amount} onChange={e => setAmount(e.target.value)}
-                placeholder="0.00" autoFocus />
-            </div>
-          </div>
-
           {activeAccounts.length > 0 && (
             <div className="field">
-              <label>Debitar de cuenta (opcional)</label>
-              <select value={accountId ?? ''} onChange={e => setAccountId(e.target.value || null)}>
+              <label>Debitar de cuenta bancaria <span style={{ fontWeight:400, color:'var(--ink-faint)', fontSize:11 }}>(opcional)</span></label>
+              <select value={accountId} onChange={e => setAccountId(e.target.value)}>
                 <option value="">— Sin asignar —</option>
                 {activeAccounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.nombre ?? a.bank} — {fmtPEN(a.saldo ?? a.balance ?? 0)}
-                  </option>
+                  <option key={a.id} value={a.id}>{a.nombre ?? a.bank} — {fmtPEN(a.saldo ?? a.balance ?? 0)}</option>
                 ))}
               </select>
             </div>
           )}
+          <div className="field">
+            <label>Notas <span style={{ fontWeight:400, color:'var(--ink-faint)', fontSize:11 }}>(opcional)</span></label>
+            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej. Pago total, pago mínimo…" />
+          </div>
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid}
-            onClick={() => onConfirm({ amount: Number(amount), accountId })}>
+            onClick={() => onConfirm({ amount: Number(amount), date, accountId: accountId || null, notes, period })}>
             <Icon name="check" size={14}/> Registrar pago
           </button>
         </div>
@@ -241,149 +234,54 @@ function PaymentModal({ creditLine, accounts, onConfirm, onClose }) {
   )
 }
 
-// ── Card visual ───────────────────────────────────────────────────────────────
-function CreditCard({ cl, onEdit, onDelete, onPay, variableExpenses }) {
-  const usado     = cl.usado    ?? 0
-  const limite    = cl.limite   ?? 0
-  const disponible = Math.max(0, limite - usado)
-  const pct       = limite > 0 ? Math.min(usado / limite, 1) : 0
-  const uColor    = utilizationColor(pct)
-
-  // Charges from variable expenses this month
-  const now = new Date()
-  const thisMonthCharges = (variableExpenses || [])
-    .filter(e => {
-      if (e.paymentMethod?.type !== 'tarjeta') return false
-      if (e.paymentMethod.creditLineId !== cl.id) return false
-      if (!e.date) return false
-      const d = new Date(e.date)
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-    })
-    .reduce((s, e) => s + (e.amount || 0), 0)
-
-  // Days until payment due — build actual next due date to handle month length correctly
-  let daysUntilPay = null
-  if (cl.fechaPago) {
-    const target = new Date(now.getFullYear(), now.getMonth(), cl.fechaPago)
-    target.setHours(0, 0, 0, 0)
-    const todayMid = new Date(now); todayMid.setHours(0, 0, 0, 0)
-    if (target <= todayMid) target.setMonth(target.getMonth() + 1)
-    daysUntilPay = Math.round((target - todayMid) / 86400000)
-  }
-
-  const urgente = daysUntilPay !== null && daysUntilPay <= 5 && usado > 0
-
+// ── Edit statement charges modal ──────────────────────────────────────────────
+function EditChargesModal({ cl, statement, autoCharges, onSave, onClose }) {
+  const [manual, setManual] = useState(
+    statement?.chargesManual != null ? String(statement.chargesManual) : String(autoCharges || '')
+  )
   return (
-    <motion.div
-      className="card"
-      variants={staggerItem}
-      whileHover={hoverLift}
-      whileTap={tapScale}
-      style={{
-        border: urgente ? '2px solid var(--bad)' : '1px solid var(--border)',
-        position: 'relative', overflow: 'hidden',
-      }}
-    >
-      {/* Urgency indicator */}
-      {urgente && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0,
-          height: 3, background: 'var(--bad)',
-        }} />
-      )}
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <div style={{
-            padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 800,
-            background: TIPO_BG[cl.tipo] ?? TIPO_BG.otro,
-            color: TIPO_COLOR[cl.tipo] ?? TIPO_COLOR.otro,
-            letterSpacing: '0.04em',
-          }}>
-            {TIPO_LABEL[cl.tipo] ?? 'Card'}
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">{cl.nombre} · {periodLabel(statement?.period)}</div>
+            <h2 className="modal-title">Ajustar cargos del mes</h2>
           </div>
-          {cl.banco && (
-            <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{cl.banco}</span>
+          <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 12 }}>
+            Cargos calculados automáticamente: <strong>{fmtPEN(autoCharges)}</strong><br/>
+            Puedes ingresar el monto real del estado de cuenta del banco si difiere (incluye intereses, comisiones, etc.).
+          </div>
+          <div className="field">
+            <label>Monto real del estado de cuenta</label>
+            <div className="amount-input">
+              <span className="amount-prefix mono">S/</span>
+              <input type="text" inputMode="decimal" className="amount-field mono" autoFocus
+                value={manual} onChange={e => setManual(e.target.value)} placeholder={String(autoCharges || '0.00')}/>
+            </div>
+          </div>
+          {Number(manual) !== autoCharges && Number(manual) > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 6 }}>
+              Diferencia de {fmtPEN(Math.abs(Number(manual) - autoCharges))} vs. cargos automáticos
+            </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn btn-xs btn-ghost" onClick={() => onEdit(cl)} title="Editar">
-            <Icon name="edit" size={11} />
-          </button>
-          <button className="btn btn-xs btn-ghost" style={{ color: 'var(--bad)' }} onClick={() => onDelete(cl)} title="Eliminar">
-            <Icon name="trash" size={11} />
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          {statement?.chargesManual != null && (
+            <button className="btn btn-ghost" onClick={() => onSave(null)} style={{ marginRight: 'auto' }}>
+              Usar automático
+            </button>
+          )}
+          <button className="btn btn-primary"
+            onClick={() => onSave(Number(manual) || null)}>
+            <Icon name="check" size={14}/> Guardar
           </button>
         </div>
       </div>
-
-      {/* Name */}
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{cl.nombre}</div>
-      {cl.moneda !== 'PEN' && (
-        <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginBottom: 8 }}>{cl.moneda}</div>
-      )}
-
-      {/* Amounts */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-mute)', marginBottom: 6 }}>
-        <span>Usado</span>
-        <span>Límite</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-        <span className="mono" style={{ fontWeight: 700, fontSize: 18, color: uColor }}>{fmtPEN(usado)}</span>
-        <span className="mono" style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink-mute)' }}>{fmtPEN(limite)}</span>
-      </div>
-
-      {/* Utilization bar */}
-      <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
-        <div style={{
-          height: '100%', width: `${pct * 100}%`, background: uColor,
-          transition: 'width 0.5s ease', borderRadius: 3,
-        }} />
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-mute)', marginBottom: 14 }}>
-        <span style={{ color: uColor, fontWeight: 600 }}>{(pct * 100).toFixed(0)}% utilización</span>
-        <span>Disponible: <strong>{fmtPEN(disponible)}</strong></span>
-      </div>
-
-      {/* Meta row: corte / pago / cargos mes */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-        {cl.fechaCorte && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-sunk)', color: 'var(--ink-mute)' }}>
-            Corte: día {cl.fechaCorte}
-          </span>
-        )}
-        {cl.fechaPago && (
-          <span style={{
-            fontSize: 10, padding: '2px 7px', borderRadius: 4,
-            background: urgente ? 'color-mix(in srgb, var(--bad) 15%, var(--bg-elev))' : 'var(--bg-sunk)',
-            color: urgente ? 'var(--bad)' : 'var(--ink-mute)',
-            fontWeight: urgente ? 700 : 400,
-          }}>
-            {urgente ? `⚠ Pago en ${daysUntilPay}d` : `Pago: día ${cl.fechaPago}`}
-          </span>
-        )}
-        {thisMonthCharges > 0 && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'color-mix(in srgb, #8b5cf6 12%, var(--bg-elev))', color: '#8b5cf6' }}>
-            Cargos mes: {fmtPEN(thisMonthCharges)}
-          </span>
-        )}
-      </div>
-
-      {/* Pay button */}
-      {usado > 0 && (
-        <button
-          className="btn btn-soft btn-full"
-          style={{ borderTop: '1px solid var(--border)', paddingTop: 10, borderRadius: 0, marginLeft: -16, marginRight: -16, marginBottom: -16, paddingBottom: 12 }}
-          onClick={() => onPay(cl)}
-        >
-          <Icon name="check" size={13} /> Registrar pago
-        </button>
-      )}
-    </motion.div>
+    </div>
   )
 }
 
@@ -392,38 +290,52 @@ export default function CreditLinesView({
   creditLines = [],
   accounts = [],
   variableExpenses = [],
+  dailyExpenses = [],
+  creditStatements = [],
   onAddCreditLine,
   onEditCreditLine,
   onDeleteCreditLine,
   onUpdateCreditUsado,
   onAddAccountMovement,
+  onAddVariableExpense,
+  onAddCreditStatement,
+  onEditCreditStatement,
 }) {
   const dialog = useDialog()
-  const [modal, setModal]       = useState(null) // null | 'new' | { cl }
-  const [payModal, setPayModal] = useState(null) // null | { cl }
+  const [modal, setModal]             = useState(null) // null | 'new' | { cl }
+  const [payModal, setPayModal]       = useState(null) // null | { cl, stmt, period }
+  const [editChargesModal, setEditChargesModal] = useState(null) // null | { cl, stmt }
+  const [manualPeriodCard, setManualPeriodCard] = useState(null) // cardId | null
+  const [manualPeriodInput, setManualPeriodInput] = useState('')
 
   const active   = creditLines.filter(cl => cl.activa !== false)
   const inactive = creditLines.filter(cl => cl.activa === false)
 
-  const totalLimite    = active.reduce((s, cl) => s + (cl.limite ?? 0), 0)
-  const totalUsado     = active.reduce((s, cl) => s + (cl.usado  ?? 0), 0)
+  const totalLimite     = active.reduce((s, cl) => s + (cl.limite ?? 0), 0)
+  const totalUsado      = active.reduce((s, cl) => s + (cl.usado  ?? 0), 0)
   const totalDisponible = Math.max(0, totalLimite - totalUsado)
-  const utilizacion    = totalLimite > 0 ? totalUsado / totalLimite : 0
+  const utilizacion     = totalLimite > 0 ? totalUsado / totalLimite : 0
 
-  // Charges this month from variable expenses
   const now = new Date()
-  const totalCargasMes = (variableExpenses || [])
-    .filter(e => {
-      if (e.paymentMethod?.type !== 'tarjeta') return false
-      if (!e.date) return false
-      const d = new Date(e.date)
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  const cp  = currentPeriod()
+
+  function getPeriodsForCard(cl) {
+    const periods = []
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const p = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+      periods.push(p)
+    }
+    return periods.filter(p => {
+      const hasStmt   = creditStatements.some(s => s.cardId === cl.id && s.period === p)
+      const hasCharge = computeAutoCharges(cl.id, p, dailyExpenses, variableExpenses) > 0
+      return hasStmt || hasCharge || p === cp
     })
-    .reduce((s, e) => s + (e.amount || 0), 0)
+  }
 
   function handleSave(data) {
     if (modal === 'new') {
-      onAddCreditLine({ ...data, id: 'cl-' + Date.now(), createdAt: new Date().toISOString() })
+      onAddCreditLine({ ...data, id: 'cl-' + Date.now(), usado: 0, createdAt: new Date().toISOString() })
     } else {
       onEditCreditLine({ ...modal.cl, ...data })
     }
@@ -435,38 +347,94 @@ export default function CreditLinesView({
     if (ok) onDeleteCreditLine(cl.id)
   }
 
-  function handlePay(cl) {
-    setPayModal({ cl })
-  }
+  function confirmPayment({ amount, date, accountId, notes, period }) {
+    const { cl, stmt } = payModal
 
-  function confirmPayment({ amount, accountId }) {
-    const { cl } = payModal
-    // Reduce credit line usado
-    onUpdateCreditUsado(cl.id, -amount)
-    // Optionally debit account
-    if (accountId && onAddAccountMovement) {
-      onAddAccountMovement({
-        id:          'mov-' + Date.now(),
-        accountId,
-        type:        'expense',
+    if (stmt && stmt.id) {
+      onEditCreditStatement({ ...stmt, isPaid: true, paidAmount: amount, paidDate: date, paidFromAccountId: accountId || null, notes })
+    } else {
+      onAddCreditStatement?.({
+        id: 'cstmt-' + Date.now(),
+        cardId: cl.id, period,
+        chargesManual: null,
+        isPaid: true, paidAmount: amount, paidDate: date,
+        paidFromAccountId: accountId || null,
+        notes,
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    if (onUpdateCreditUsado) onUpdateCreditUsado(cl.id, -amount)
+
+    if (onAddVariableExpense) {
+      onAddVariableExpense({
+        id: 'vexp-cp-' + Date.now(),
         description: `Pago tarjeta: ${cl.nombre}`,
         amount,
-        delta:       -amount,
-        date:        new Date().toISOString().split('T')[0],
+        date,
+        category: 'Tarjeta de crédito',
+        deductible: false,
+        notes: notes || `Pago de ${periodLabel(period)}`,
+        isCreditPayment: true,
+        creditLineId: cl.id,
+        paymentMethod: accountId ? { type: 'cuenta', accountId } : { type: 'efectivo' },
+      })
+    }
+
+    if (accountId && onAddAccountMovement) {
+      onAddAccountMovement({
+        id: 'mov-' + Date.now(),
+        accountId,
+        type: 'expense',
+        description: `Pago tarjeta: ${cl.nombre} (${periodLabel(period)})`,
+        amount,
+        delta: -amount,
+        date,
       })
     }
     setPayModal(null)
   }
 
+  function handleEditCharges(newManual) {
+    const { cl, stmt } = editChargesModal
+    const period = stmt?.period ?? cp
+    if (stmt && stmt.id) {
+      onEditCreditStatement({ ...stmt, chargesManual: newManual })
+    } else {
+      onAddCreditStatement?.({
+        id: 'cstmt-' + Date.now(),
+        cardId: cl.id, period,
+        chargesManual: newManual,
+        isPaid: false, paidAmount: null, paidDate: null, paidFromAccountId: null,
+        notes: '',
+        createdAt: new Date().toISOString(),
+      })
+    }
+    setEditChargesModal(null)
+  }
+
+  function handleAddManualPeriod(cl) {
+    const period = manualPeriodInput.trim()
+    if (!/^\d{4}-\d{2}$/.test(period)) return
+    onAddCreditStatement?.({
+      id: 'cstmt-' + Date.now(),
+      cardId: cl.id, period,
+      chargesManual: null, isPaid: false,
+      paidAmount: null, paidDate: null, paidFromAccountId: null,
+      notes: '', createdAt: new Date().toISOString(),
+    })
+    setManualPeriodCard(null)
+    setManualPeriodInput('')
+  }
+
   return (
     <div className="view">
-      {/* Header */}
       <header className="view-header">
         <div>
           <div className="eyebrow">Crédito rotativo</div>
           <h1>Tarjetas de crédito</h1>
           <p className="lede">
-            Controla tu deuda, utilización y fechas de pago. Los gastos cargados a tarjeta se sincronizan automáticamente.
+            Controla deuda, cargos mensuales y pagos. Los gastos cargados a tarjeta se sincronizan automáticamente.
           </p>
         </div>
         <div className="view-header-actions">
@@ -477,158 +445,259 @@ export default function CreditLinesView({
       </header>
 
       {/* Summary KPIs */}
-      <motion.section
-        className="kpi-row"
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        style={{ marginBottom: 28 }}
-      >
-        <motion.div className="kpi kpi-accent" variants={staggerItem} whileHover={hoverLift}>
-          <div className="kpi-label">Total límite</div>
-          <div className="kpi-value">{fmtPEN(totalLimite)}</div>
-          <div className="kpi-foot">{active.length} tarjeta(s) activa(s)</div>
-        </motion.div>
-        <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
-          <div className="kpi-label">Deuda total</div>
-          <div className="kpi-value" style={{ color: totalUsado > 0 ? 'var(--bad)' : 'var(--ink-mute)' }}>
-            {totalUsado > 0 ? fmtPEN(totalUsado) : '—'}
-          </div>
-          <div className="kpi-foot">{(utilizacion * 100).toFixed(0)}% utilización</div>
-        </motion.div>
-        <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
-          <div className="kpi-label">Disponible</div>
-          <div className="kpi-value" style={{ color: 'var(--good)' }}>{fmtPEN(totalDisponible)}</div>
-          <div className="kpi-foot">Crédito sin usar</div>
-        </motion.div>
-        {totalCargasMes > 0 && (
-          <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
-            <div className="kpi-label">Cargos este mes</div>
-            <div className="kpi-value">{fmtPEN(totalCargasMes)}</div>
-            <div className="kpi-foot">En gastos variables</div>
+      {active.length > 0 && (
+        <motion.section className="kpi-row" variants={staggerContainer} initial="hidden" animate="visible" style={{ marginBottom: 28 }}>
+          <motion.div className="kpi kpi-accent" variants={staggerItem} whileHover={hoverLift}>
+            <div className="kpi-label">Total límite</div>
+            <div className="kpi-value">{fmtPEN(totalLimite)}</div>
+            <div className="kpi-foot">{active.length} tarjeta(s) activa(s)</div>
           </motion.div>
-        )}
-      </motion.section>
-
-      {/* Utilization summary bar */}
-      {totalLimite > 0 && (
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-mute)', marginBottom: 6 }}>
-            <span>Utilización global</span>
-            <span style={{ color: utilizationColor(utilizacion), fontWeight: 700 }}>
-              {(utilizacion * 100).toFixed(0)}%
-              {utilizacion >= 0.7 ? ' ⚠ Alta' : utilizacion >= 0.3 ? ' · Moderada' : ' · Baja ✓'}
-            </span>
-          </div>
-          <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${utilizacion * 100}%`,
-              background: utilizationColor(utilizacion),
-              transition: 'width 0.6s ease', borderRadius: 4,
-            }} />
-          </div>
-        </div>
+          <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
+            <div className="kpi-label">Deuda total</div>
+            <div className="kpi-value" style={{ color: totalUsado > 0 ? 'var(--bad)' : 'var(--ink-mute)' }}>
+              {totalUsado > 0 ? fmtPEN(totalUsado) : '—'}
+            </div>
+            <div className="kpi-foot">{(utilizacion * 100).toFixed(0)}% utilización</div>
+          </motion.div>
+          <motion.div className="kpi" variants={staggerItem} whileHover={hoverLift}>
+            <div className="kpi-label">Disponible</div>
+            <div className="kpi-value" style={{ color: 'var(--good)' }}>{fmtPEN(totalDisponible)}</div>
+            <div className="kpi-foot">Crédito sin usar</div>
+          </motion.div>
+        </motion.section>
       )}
 
-      {/* Credit cards grid */}
+      {/* Cards */}
       {active.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>💳</div>
           <h3 style={{ marginBottom: 8 }}>Sin tarjetas de crédito</h3>
-          <p style={{ color: 'var(--ink-mute)', marginBottom: 20, maxWidth: 340, margin: '0 auto 20px' }}>
-            Agrega tus tarjetas para controlar deuda, utilización y fechas de pago. Los gastos variables cargados a tarjeta se sincronizan automáticamente.
+          <p style={{ color: 'var(--ink-mute)', marginBottom: 20 }}>
+            Agrega tus tarjetas para controlar deuda, cargos y pagos mensuales.
           </p>
           <button className="btn btn-primary" onClick={() => setModal('new')}>
             <Icon name="plus" size={14} /> Agregar primera tarjeta
           </button>
         </div>
       ) : (
-        <motion.div
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 32 }}
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-        >
-          {active.map(cl => (
-            <CreditCard
-              key={cl.id}
-              cl={cl}
-              onEdit={cl => setModal({ cl })}
-              onDelete={handleDelete}
-              onPay={handlePay}
-              variableExpenses={variableExpenses}
-            />
-          ))}
-        </motion.div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {active.map(cl => {
+            const periods = getPeriodsForCard(cl)
+            const usado    = cl.usado ?? 0
+            const limite   = cl.limite ?? 0
+            const pct      = limite > 0 ? Math.min(usado / limite, 1) : 0
+            const uColor   = utilizationColor(pct)
+
+            let daysUntilPay = null
+            if (cl.fechaPago) {
+              const target = new Date(now.getFullYear(), now.getMonth(), cl.fechaPago)
+              target.setHours(0,0,0,0)
+              const today = new Date(); today.setHours(0,0,0,0)
+              if (target <= today) target.setMonth(target.getMonth() + 1)
+              daysUntilPay = Math.round((target - today) / 86400000)
+            }
+            const urgente = daysUntilPay !== null && daysUntilPay <= 5 && usado > 0
+
+            return (
+              <motion.div key={cl.id} className="card" variants={staggerItem}
+                style={{ border: urgente ? '2px solid var(--bad)' : '1px solid var(--border)', padding: 0, overflow: 'hidden' }}>
+
+                {/* Card header */}
+                <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{
+                    padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 800,
+                    background: TIPO_BG[cl.tipo] ?? TIPO_BG.otro,
+                    color: TIPO_COLOR[cl.tipo] ?? TIPO_COLOR.otro,
+                    letterSpacing: '0.04em', flexShrink: 0,
+                  }}>
+                    {TIPO_LABEL[cl.tipo] ?? 'Card'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{cl.nombre}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                      {cl.banco && <span>{cl.banco}</span>}
+                      <span>Límite: <strong>{fmtPEN(cl.limite ?? 0)}</strong></span>
+                      {cl.fechaCorte && <span>Corte: día {cl.fechaCorte}</span>}
+                      {cl.fechaPago && (
+                        <span style={{ color: urgente ? 'var(--bad)' : undefined, fontWeight: urgente ? 700 : undefined }}>
+                          {urgente ? `⚠ Pago en ${daysUntilPay}d` : `Pago: día ${cl.fechaPago}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div className="mono" style={{ fontWeight: 700, color: uColor, fontSize: 16 }}>{fmtPEN(usado)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>saldo usado</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    <button className="btn btn-xs btn-ghost" onClick={() => setModal({ cl })} title="Editar tarjeta">
+                      <Icon name="edit" size={11} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost" style={{ color: 'var(--bad)' }} onClick={() => handleDelete(cl)} title="Eliminar">
+                      <Icon name="trash" size={11} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Utilization bar */}
+                <div style={{ height: 4, background: 'var(--border)' }}>
+                  <div style={{ height: '100%', width: `${pct * 100}%`, background: uColor, transition: 'width .5s' }} />
+                </div>
+
+                {/* Statements list */}
+                <div style={{ padding: '0 0 4px' }}>
+                  {/* Column headers */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 100px', gap: 8, padding: '10px 20px 6px', borderBottom: '1px solid var(--border)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)' }}>
+                    <span>Periodo</span>
+                    <span style={{ textAlign: 'right' }}>Cargos</span>
+                    <span style={{ textAlign: 'center' }}>Estado</span>
+                    <span style={{ textAlign: 'center' }}>Acción</span>
+                  </div>
+
+                  {periods.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>
+                      Sin movimientos aún. Agrega gastos del día o variables con esta tarjeta.
+                    </div>
+                  ) : (
+                    periods.map(period => {
+                      const stmt       = creditStatements.find(s => s.cardId === cl.id && s.period === period)
+                      const autoChg    = computeAutoCharges(cl.id, period, dailyExpenses, variableExpenses)
+                      const totalChg   = stmt?.chargesManual ?? autoChg
+                      const isCurrent  = period === cp
+                      const isPaid     = stmt?.isPaid ?? false
+
+                      const [py, pm]  = period.split('-').map(Number)
+                      const dueDate   = cl.fechaPago
+                        ? new Date(py, pm - 1 + (cl.fechaPago < (cl.fechaCorte || 0) ? 1 : 0), cl.fechaPago)
+                        : null
+                      const isOverdue = !isPaid && dueDate && dueDate < now && !isCurrent
+
+                      return (
+                        <div key={period} style={{
+                          display: 'grid', gridTemplateColumns: '1fr 120px 120px 100px',
+                          gap: 8, padding: '10px 20px', alignItems: 'center',
+                          borderBottom: '1px solid var(--border)',
+                          background: isCurrent ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
+                        }}>
+                          <div>
+                            <div style={{ fontWeight: isCurrent ? 700 : 500, fontSize: 13 }}>
+                              {periodLabel(period)}
+                              {isCurrent && <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 6, fontWeight: 700 }}>ACTUAL</span>}
+                            </div>
+                            {isPaid && stmt?.paidDate && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>
+                                Pagado el {stmt.paidDate}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <span className="mono" style={{ fontWeight: 600, fontSize: 13, color: totalChg > 0 ? 'var(--bad)' : 'var(--ink-mute)' }}>
+                              {totalChg > 0 ? fmtPEN(totalChg) : '—'}
+                            </span>
+                            {stmt?.chargesManual != null && (
+                              <div style={{ fontSize: 9, color: 'var(--warn)', marginTop: 1 }}>manual</div>
+                            )}
+                            {totalChg > 0 && (
+                              <button
+                                onClick={() => setEditChargesModal({ cl, stmt: stmt ?? { cardId: cl.id, period } })}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', color: 'var(--ink-faint)' }}
+                                title="Ajustar monto"
+                              >
+                                <Icon name="edit" size={10} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ textAlign: 'center' }}>
+                            {isPaid ? (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'color-mix(in srgb, var(--good) 12%, transparent)', color: 'var(--good)', fontWeight: 700 }}>
+                                ✓ Pagado
+                              </span>
+                            ) : isOverdue ? (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'var(--bad-soft, color-mix(in srgb, var(--bad) 12%, transparent))', color: 'var(--bad)', fontWeight: 700 }}>
+                                ⚠ Vencido
+                              </span>
+                            ) : totalChg > 0 ? (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'color-mix(in srgb, var(--warn) 12%, transparent)', color: 'var(--warn)', fontWeight: 700 }}>
+                                ⏳ Pendiente
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Sin cargos</span>
+                            )}
+                          </div>
+
+                          <div style={{ textAlign: 'center' }}>
+                            {!isPaid && totalChg > 0 ? (
+                              <button
+                                className="btn btn-xs btn-primary"
+                                onClick={() => setPayModal({ cl, stmt: stmt ?? null, period })}
+                              >
+                                Pagar
+                              </button>
+                            ) : isPaid && stmt?.paidAmount ? (
+                              <span className="mono" style={{ fontSize: 11, color: 'var(--good)' }}>{fmtPEN(stmt.paidAmount)}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+
+                  {/* Manual period opener */}
+                  <div style={{ padding: '10px 20px' }}>
+                    {manualPeriodCard === cl.id ? (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={manualPeriodInput}
+                          onChange={e => setManualPeriodInput(e.target.value)}
+                          placeholder="YYYY-MM (ej. 2026-01)"
+                          autoFocus
+                          style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-base)', color: 'var(--ink)', width: 160 }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleAddManualPeriod(cl)
+                            if (e.key === 'Escape') { setManualPeriodCard(null); setManualPeriodInput('') }
+                          }}
+                        />
+                        <button className="btn btn-xs btn-primary" onClick={() => handleAddManualPeriod(cl)}>
+                          Agregar
+                        </button>
+                        <button className="btn btn-xs btn-ghost" onClick={() => { setManualPeriodCard(null); setManualPeriodInput('') }}>
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => { setManualPeriodCard(cl.id); setManualPeriodInput('') }}
+                      >
+                        + Abrir periodo manualmente
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
       )}
 
-      {/* Inactive */}
+      {/* Inactive cards */}
       {inactive.length > 0 && (
-        <div style={{ opacity: 0.6, marginBottom: 24 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-mute)', marginBottom: 8 }}>
-            Tarjetas inactivas ({inactive.length})
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <details style={{ marginTop: 20 }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--ink-mute)', fontSize: 13, padding: '8px 0' }}>
+            {inactive.length} tarjeta(s) archivada(s)
+          </summary>
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {inactive.map(cl => (
-              <div key={cl.id} style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: 12,
-                border: '1px solid var(--border)', background: 'var(--bg-elev)',
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
-                <Icon name="card" size={12} />
-                <span>{cl.nombre}</span>
-                <button className="btn btn-xs btn-ghost" onClick={() => onEditCreditLine({ ...cl, activa: true })}>↩</button>
+              <div key={cl.id} className="card" style={{ opacity: 0.6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px' }}>
+                <span style={{ fontSize: 13 }}>{cl.nombre}</span>
+                <button className="btn btn-xs btn-ghost" onClick={() => onEditCreditLine({ ...cl, activa: true })}>Reactivar</button>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Recent charges from variable expenses */}
-      {totalCargasMes > 0 && (
-        <div className="card">
-          <div className="card-head">
-            <div>
-              <div className="card-eyebrow">Gastos variables · este mes</div>
-              <h3 className="card-title">Cargos a tarjeta</h3>
-            </div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="invoice-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Descripción</th>
-                  <th>Tarjeta</th>
-                  <th className="num-col">Monto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(variableExpenses || [])
-                  .filter(e => {
-                    if (e.paymentMethod?.type !== 'tarjeta') return false
-                    if (!e.date) return false
-                    const d = new Date(e.date)
-                    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-                  })
-                  .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
-                  .map(e => {
-                    const cl = creditLines.find(c => c.id === e.paymentMethod?.creditLineId)
-                    return (
-                      <tr key={e.id}>
-                        <td className="ink-mute mono">{e.date}</td>
-                        <td>{e.description}</td>
-                        <td className="ink-mute" style={{ fontSize: 12 }}>{cl?.nombre ?? '—'}</td>
-                        <td className="num-col mono" style={{ color: 'var(--bad)', fontWeight: 600 }}>
-                          − {fmtPEN(e.amount)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        </details>
       )}
 
       {/* Modals */}
@@ -640,11 +709,22 @@ export default function CreditLinesView({
         />
       )}
       {payModal && (
-        <PaymentModal
-          creditLine={payModal.cl}
+        <PayStatementModal
+          cl={payModal.cl}
+          statement={payModal.stmt ?? creditStatements.find(s => s.cardId === payModal.cl.id && s.period === (payModal.period ?? cp))}
+          autoCharges={computeAutoCharges(payModal.cl.id, payModal.period ?? payModal.stmt?.period ?? cp, dailyExpenses, variableExpenses)}
           accounts={accounts}
           onConfirm={confirmPayment}
           onClose={() => setPayModal(null)}
+        />
+      )}
+      {editChargesModal && (
+        <EditChargesModal
+          cl={editChargesModal.cl}
+          statement={editChargesModal.stmt}
+          autoCharges={computeAutoCharges(editChargesModal.cl.id, editChargesModal.stmt?.period ?? cp, dailyExpenses, variableExpenses)}
+          onSave={handleEditCharges}
+          onClose={() => setEditChargesModal(null)}
         />
       )}
     </div>

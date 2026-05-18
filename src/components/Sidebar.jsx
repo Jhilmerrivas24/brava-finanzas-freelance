@@ -23,7 +23,8 @@ const NAV_SECTIONS = [
     id:    'gastos',
     label: 'Gastos',
     items: [
-      { id: 'gastos',    label: 'Gastos',          icon: 'bills'    },
+      { id: 'daily',     label: 'Gastos del día',  icon: 'wallet'   },
+      { id: 'gastos',    label: 'Gastos recurrentes', icon: 'bills'  },
       { id: 'budget',    label: 'Presupuesto',     icon: 'filter'   },
     ],
   },

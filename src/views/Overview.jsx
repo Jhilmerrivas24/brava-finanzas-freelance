@@ -44,13 +44,15 @@ const TIPO_COLOR = {
 const MONTHS_ES    = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const MONTHS_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Set','Oct','Nov','Dic']
 
-// ── Account Modal ──────────────────────────────────────────────────────────────
+// ── Account Modal (full version — matches AccountsView) ───────────────────────
 function AccountModal({ initial, onSave, onClose }) {
   const defaults = {
     nombre: initial?.nombre ?? initial?.bank ?? '',
+    banco:  initial?.banco  ?? initial?.bank ?? '',
     tipo:   initial?.tipo   ?? 'corriente',
     saldo:  String(initial?.saldo ?? initial?.balance ?? ''),
     moneda: initial?.moneda ?? 'PEN',
+    activa: initial?.activa ?? true,
   }
   const [form, setForm] = useState(defaults)
   const set   = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -58,7 +60,7 @@ function AccountModal({ initial, onSave, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="eyebrow">{initial ? 'Editar' : 'Agregar'} cuenta</div>
@@ -68,12 +70,13 @@ function AccountModal({ initial, onSave, onClose }) {
         </div>
         <div className="modal-body">
           <div className="field-row">
-            <div className="field" style={{ flex:2 }}>
+            <div className="field" style={{ flex: 2 }}>
               <label>Nombre de la cuenta</label>
-              <input type="text" value={form.nombre} onChange={e => set('nombre', e.target.value)}
+              <input type="text" value={form.nombre}
+                onChange={e => set('nombre', e.target.value)}
                 placeholder="Ej. BCP Corriente, Yape personal…" autoFocus/>
             </div>
-            <div className="field" style={{ flex:1 }}>
+            <div className="field" style={{ flex: 1 }}>
               <label>Tipo</label>
               <select value={form.tipo} onChange={e => set('tipo', e.target.value)}>
                 <option value="corriente">Cta. corriente</option>
@@ -81,6 +84,21 @@ function AccountModal({ initial, onSave, onClose }) {
                 <option value="digital">Billetera digital</option>
                 <option value="negocio">Negocio</option>
                 <option value="otro">Otro</option>
+              </select>
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field" style={{ flex: 2 }}>
+              <label>Banco / Entidad</label>
+              <input type="text" value={form.banco}
+                onChange={e => set('banco', e.target.value)}
+                placeholder="Ej. BCP, Interbank, Yape, Nequi…"/>
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label>Moneda</label>
+              <select value={form.moneda} onChange={e => set('moneda', e.target.value)}>
+                <option value="PEN">Soles (PEN)</option>
+                <option value="USD">Dólares (USD)</option>
               </select>
             </div>
           </div>
@@ -93,21 +111,15 @@ function AccountModal({ initial, onSave, onClose }) {
                   value={form.saldo} onChange={e => set('saldo', e.target.value)} placeholder="0.00"/>
               </div>
             </div>
-            <div className="field">
-              <label>Moneda</label>
-              <select value={form.moneda} onChange={e => set('moneda', e.target.value)}>
-                <option value="PEN">Soles (PEN)</option>
-                <option value="USD">Dólares (USD)</option>
-              </select>
-            </div>
           </div>
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid}
             onClick={() => onSave({
-              nombre: form.nombre, banco: form.nombre, tipo: form.tipo,
-              saldo: Number(form.saldo) || 0, moneda: form.moneda, activa: true,
+              nombre: form.nombre, banco: form.banco || form.nombre,
+              tipo: form.tipo, saldo: Number(form.saldo) || 0,
+              moneda: form.moneda, activa: true,
               bank: form.nombre, balance: Number(form.saldo) || 0,
               type: TIPO_LABEL[form.tipo] ?? form.tipo,
             })}>
@@ -120,7 +132,7 @@ function AccountModal({ initial, onSave, onClose }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, delta, deltaPositive, foot, accent, rawValue, prevValue }) {
+function KpiCard({ label, value, delta, deltaPositive, foot, accent, rawValue, prevValue, sign }) {
   const counted = useCountUp(rawValue ?? 0)
   const pct = (prevValue != null && prevValue !== 0 && rawValue != null)
     ? ((rawValue - prevValue) / Math.abs(prevValue) * 100).toFixed(0)
@@ -137,7 +149,7 @@ function KpiCard({ label, value, delta, deltaPositive, foot, accent, rawValue, p
       style={{ cursor: 'default' }}
     >
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{rawValue != null ? fmtPEN(counted) : value}</div>
+      <div className="kpi-value">{rawValue != null ? fmtPEN(counted, { sign: !!sign }) : value}</div>
       {showPct && (
         <div className={`kpi-delta ${pctIsPos ? 'is-pos' : 'is-neg'}`}>
           <Icon name={pctIsPos ? 'arrowUp' : 'arrowDown'} size={12}/>
@@ -167,7 +179,7 @@ function EmptyCard({ icon, title, desc, action, onAction }) {
 }
 
 // ── "Tu sueldo real" card ─────────────────────────────────────────────────────
-function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variableExpenses = [], selYear, selMonth }) {
+function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variableExpenses = [], dailyExpenses = [], selYear, selMonth }) {
   const thisYear = selYear
   const thisMon  = selMonth - 1  // 0-indexed
 
@@ -202,13 +214,23 @@ function RealSalaryCard({ data, bills = [], settings = {}, invoices = [], variab
   const gastoNegocio = billsTotal + varDeducible
   const sueldoReal   = ingresosBrutos - impuestos - gastoNegocio
 
-  const gastosPersonales = variableExpenses
+  const varPersonales = variableExpenses
     .filter(e => {
       if (e.deductible || !e.date) return false
       const d = new Date(e.date)
       return d.getFullYear() === thisYear && d.getMonth() === thisMon
     })
     .reduce((s, e) => s + (e.amount || 0), 0)
+
+  const dailyTotal = dailyExpenses
+    .filter(e => {
+      if (!e.date) return false
+      const d = new Date(e.date)
+      return d.getFullYear() === thisYear && d.getMonth() === thisMon
+    })
+    .reduce((s, e) => s + (e.amount || 0), 0)
+
+  const gastosPersonales = varPersonales + dailyTotal
 
   let contextMsg = null
   if (gastosPersonales > 0 && sueldoReal < gastosPersonales) {
@@ -435,6 +457,7 @@ function saveSnapshot(year, month, snap) {
 export default function Overview({
   data, invoices, bills, goals, accounts, clients, fixedIncome,
   creditLines, loans, variableExpenses = [], quotes = [],
+  dailyExpenses = [],
   onMarkPaid, onNewInvoice, onGoto, settings,
   onAddAccount, onEditAccount, onDeleteAccount,
 }) {
@@ -464,7 +487,8 @@ export default function Overview({
 
     const outBills        = (bills || []).filter(b => b.active !== false).reduce((s, b) => s + b.amount, 0)
     const outVar          = (variableExpenses || []).filter(e => isMon(e.date)).reduce((s, e) => s + e.amount, 0)
-    const outThisMonth    = outBills + outVar
+    const outDaily        = (dailyExpenses || []).filter(e => isMon(e.date)).reduce((s, e) => s + e.amount, 0)
+    const outThisMonth    = outBills + outVar + outDaily
 
     const igvThisMonth    = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'factura' && isMon(i.issuedDate)).reduce((s, i) => s + (i.igv ?? i.amount * 0.18), 0)
     const retentionThisMonth = (invoices || []).filter(i => i.status === 'paid' && i.docType === 'rh' && i.hasRetention && isMon(i.issuedDate)).reduce((s, i) => s + (i.retention || 0), 0)
@@ -482,7 +506,7 @@ export default function Overview({
     if (isCurrentMonth) return data
     return { ...data, ...computeForMonth(selYear, selMonth) }
   // eslint-disable-next-line
-  }, [selYear, selMonth, isCurrentMonth, data, invoices, bills, variableExpenses, fixedIncome, quotes])
+  }, [selYear, selMonth, isCurrentMonth, data, invoices, bills, variableExpenses, dailyExpenses, fixedIncome, quotes])
 
   // Previous month for comparison deltas
   const prevData = useMemo(() => {
@@ -490,7 +514,7 @@ export default function Overview({
     if (pm < 1) { pm = 12; py-- }
     return computeForMonth(py, pm)
   // eslint-disable-next-line
-  }, [selYear, selMonth, data, invoices, bills, variableExpenses, fixedIncome, quotes])
+  }, [selYear, selMonth, data, invoices, bills, variableExpenses, dailyExpenses, fixedIncome, quotes])
 
   // ── Alerts ───────────────────────────────────────────────────────────────
   function dismissAlert(id) {
@@ -828,14 +852,23 @@ export default function Overview({
           label="Egresos del mes"
           rawValue={activeData.outThisMonth}
           prevValue={prevData.outThisMonth}
-          foot={`${(bills || []).length} gasto${(bills||[]).length !== 1 ? 's' : ''} fijo${(bills||[]).length !== 1 ? 's' : ''} activo${(bills||[]).length !== 1 ? 's' : ''}`}
+          foot={(() => {
+            const nBills = (bills || []).filter(b => b.active !== false).length
+            const nVar   = (variableExpenses || []).filter(e => { if (!e.date) return false; const d = new Date(e.date); return d.getFullYear() === selYear && d.getMonth() === selMonth - 1 }).length
+            const nDaily = (dailyExpenses    || []).filter(e => { if (!e.date) return false; const d = new Date(e.date); return d.getFullYear() === selYear && d.getMonth() === selMonth - 1 }).length
+            const parts = []
+            if (nBills > 0)  parts.push(`${nBills} fijo${nBills !== 1 ? 's' : ''}`)
+            if (nVar > 0)    parts.push(`${nVar} variable${nVar !== 1 ? 's' : ''}`)
+            if (nDaily > 0)  parts.push(`${nDaily} diario${nDaily !== 1 ? 's' : ''}`)
+            return parts.length ? parts.join(' · ') : 'Sin egresos'
+          })()}
         />
         <KpiCard
           label="Neto"
-          value={fmtPEN(net, { sign: activeData.inThisMonth > 0 || activeData.outThisMonth > 0 })}
           rawValue={net}
           prevValue={prevData.inThisMonth - prevData.outThisMonth}
-          foot={activeData.inThisMonth > 0 ? `Margen ${((net / activeData.inThisMonth) * 100).toFixed(0)}%` : 'Sin movimientos aún'}
+          sign={activeData.inThisMonth > 0 || activeData.outThisMonth > 0}
+          foot={net < 0 ? `Déficit — egresos superan ingresos` : activeData.inThisMonth > 0 ? `Margen ${((net / activeData.inThisMonth) * 100).toFixed(0)}%` : 'Sin movimientos aún'}
           deltaPositive={net >= 0}
         />
       </motion.section>
@@ -872,6 +905,7 @@ export default function Overview({
         settings={settings}
         invoices={invoices}
         variableExpenses={variableExpenses}
+        dailyExpenses={dailyExpenses}
         selYear={selYear}
         selMonth={selMonth}
       />

@@ -23,6 +23,7 @@ export default function SettingsView({ settings, onSave }) {
       role:          form.get('role'),
       industry:      form.get('industry'),
       currency:      form.get('currency'),
+      myRuc:         form.get('myRuc'),
       taxRate:       Number(form.get('taxRate')),
       hourlyRate:    Number(form.get('hourlyRate')),
       detractionPct: Number(form.get('detractionPct')),
@@ -73,6 +74,21 @@ export default function SettingsView({ settings, onSave }) {
                 defaultValue={settings.role}
                 placeholder="Ej. Diseñadora freelance"
               />
+            </div>
+
+            <div className="field">
+              <label htmlFor="myRuc">RUC / DNI</label>
+              <input
+                type="text"
+                id="myRuc"
+                name="myRuc"
+                defaultValue={settings.myRuc}
+                placeholder="Ej. 20601234567"
+                maxLength={11}
+                style={{ maxWidth: 180 }}
+                onInput={e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 11) }}
+              />
+              <span className="field-hint">Tu número de RUC o DNI como freelancer.</span>
             </div>
 
             <div className="field">
