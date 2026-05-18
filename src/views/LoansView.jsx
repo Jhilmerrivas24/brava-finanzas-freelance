@@ -60,62 +60,49 @@ function LoanModal({ initial, onSave, onClose }) {
     montoOriginal:   String(initial?.montoOriginal   ?? ''),
     totalCuotas:     String(initial?.totalCuotas     ?? ''),
     cuotasYaPagadas: String(initial?.cuotasYaPagadas ?? ''),
-    tcea:            String(initial?.tcea            ?? initial?.tasaAnual ?? ''),
+    tcea:            String(initial?.tcea ?? initial?.tasaAnual ?? ''),
     fechaPrimerPago: initial?.fechaPrimerPago ?? '',
-    fechaInicio:     initial?.fechaInicio     ?? '',
-    fechaFin:        initial?.fechaFin        ?? '',
     diaPago:         String(initial?.diaPago  ?? ''),
     moneda:          initial?.moneda          ?? 'PEN',
     activo:          initial?.activo          ?? true,
   }
-  const [form, setForm]       = useState(defaults)
+  const [form, setForm]         = useState(defaults)
   const [schedule, setSchedule] = useState(initial?.schedule ?? null)
-  const [showSched, setShowSched] = useState(!!initial?.schedule)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const monto    = Number(form.montoOriginal) || 0
-  const nCuotas  = Number(form.totalCuotas)  || 0
-  const tcea     = Number(form.tcea)          || 0
-  const yaP      = Number(form.cuotasYaPagadas) || 0
-  const restantes = Math.max(0, nCuotas - yaP)
+  const monto   = Number(form.montoOriginal) || 0
+  const nCuotas = Number(form.totalCuotas)   || 0
+  const tcea    = Number(form.tcea)           || 0
+  const yaP     = Number(form.cuotasYaPagadas) || 0
+
   const cuotaFija = schedule ? schedule[0]?.total : null
-
-  // Saldo from schedule: sum of capital of remaining cuotas
   const saldoFromSchedule = schedule
-    ? schedule.slice(yaP).reduce((s, r) => s + r.capital, 0)
+    ? Math.round(schedule.slice(yaP).reduce((s, r) => s + r.capital, 0) * 100) / 100
     : null
-  const saldoFinal = saldoFromSchedule != null
-    ? Math.round(saldoFromSchedule * 100) / 100
-    : monto
+  const saldoFinal = saldoFromSchedule ?? monto
+  const pct = monto > 0 && saldoFinal <= monto ? (monto - saldoFinal) / monto : 0
 
-  const pct = monto > 0 && saldoFinal <= monto
-    ? (monto - saldoFinal) / monto : 0
-
+  const canCompute = monto > 0 && tcea > 0 && nCuotas > 0
   const valid = form.nombre.trim() && monto > 0
   const curr  = form.moneda === 'USD' ? 'US$' : 'S/'
 
   function handleAutoCompute() {
     const result = computeSchedule(monto, tcea, nCuotas, form.fechaPrimerPago || null)
-    if (!result) return
-    setSchedule(result.schedule)
-    setShowSched(true)
+    if (result) setSchedule(result.schedule)
   }
 
-  function updateScheduleRow(i, field, val) {
-    setSchedule(prev => {
-      const next = prev.map((r, idx) => {
-        if (idx !== i) return r
-        const updated = { ...r, [field]: Number(val) || 0 }
-        updated.total = Math.round((updated.capital + updated.interes) * 100) / 100
-        return updated
-      })
-      return next
-    })
+  function updateScheduleRow(i, field, rawVal) {
+    setSchedule(prev => prev.map((r, idx) => {
+      if (idx !== i) return r
+      const updated = { ...r, [field]: field === 'fecha' ? rawVal : (Number(rawVal) || 0) }
+      if (field !== 'fecha') updated.total = Math.round((updated.capital + updated.interes) * 100) / 100
+      return updated
+    }))
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="eyebrow">{initial ? 'Editar' : 'Registrar'} préstamo</div>
@@ -123,9 +110,10 @@ function LoanModal({ initial, onSave, onClose }) {
           </div>
           <button className="icon-btn" onClick={onClose}><Icon name="close" size={18}/></button>
         </div>
-        <div className="modal-body">
 
-          {/* Name + bank */}
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+          {/* ── Step 1: Identificación ── */}
           <div className="field-row">
             <div className="field" style={{ flex: 2 }}>
               <label>Nombre del préstamo</label>
@@ -134,13 +122,11 @@ function LoanModal({ initial, onSave, onClose }) {
                 placeholder="Ej. Préstamo MIBANCO MYPE…"/>
             </div>
             <div className="field" style={{ flex: 1 }}>
-              <label>Banco / Entidad</label>
+              <label>Banco</label>
               <input type="text" value={form.banco}
-                onChange={e => set('banco', e.target.value)} placeholder="BCP, BBVA…"/>
+                onChange={e => set('banco', e.target.value)} placeholder="MIBANCO, BCP…"/>
             </div>
           </div>
-
-          {/* Type + currency */}
           <div className="field-row">
             <div className="field">
               <label>Tipo</label>
@@ -159,184 +145,184 @@ function LoanModal({ initial, onSave, onClose }) {
                 <option value="USD">Dólares (USD)</option>
               </select>
             </div>
-          </div>
-
-          {/* Monto + TCEA + cuotas + primer pago */}
-          <div className="field-row">
-            <div className="field">
-              <label>Monto neto desembolsado</label>
-              <div className="amount-input">
-                <span className="amount-prefix mono">{curr}</span>
-                <input type="text" inputMode="decimal" className="amount-field mono"
-                  value={form.montoOriginal} onChange={e => set('montoOriginal', e.target.value)} placeholder="0.00"/>
-              </div>
-            </div>
-            <div className="field">
-              <label>TCEA (%)</label>
-              <input type="text" inputMode="decimal" value={form.tcea}
-                onChange={e => set('tcea', e.target.value)} placeholder="Ej. 77.15"/>
-            </div>
-          </div>
-          <div className="field-row">
-            <div className="field">
-              <label>Total de cuotas</label>
-              <input type="number" min={1} value={form.totalCuotas}
-                onChange={e => set('totalCuotas', e.target.value)} placeholder="Ej. 12"/>
-            </div>
-            <div className="field">
-              <label>Fecha del primer pago</label>
-              <input type="date" value={form.fechaPrimerPago}
-                onChange={e => set('fechaPrimerPago', e.target.value)}/>
-            </div>
-            <div className="field">
-              <label>¿Cuántas ya pagaste?</label>
-              <input type="number" min={0} value={form.cuotasYaPagadas}
-                onChange={e => set('cuotasYaPagadas', e.target.value)} placeholder="0"/>
-            </div>
-          </div>
-
-          {/* Auto-compute button */}
-          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              type="button"
-              className="btn btn-soft"
-              style={{ fontSize: 13 }}
-              disabled={!monto || !tcea || !nCuotas}
-              onClick={handleAutoCompute}
-            >
-              ⚡ Auto-calcular cronograma
-            </button>
-            {schedule && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs"
-                onClick={() => setShowSched(v => !v)}
-              >
-                {showSched ? '▲ Ocultar' : '▼ Ver'} cronograma ({schedule.length} cuotas)
-              </button>
-            )}
-            {!monto || !tcea || !nCuotas ? (
-              <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Completa monto, TCEA y cuotas primero</span>
-            ) : null}
-          </div>
-
-          {/* Schedule table */}
-          {schedule && showSched && (
-            <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: '8px 12px', background: 'var(--bg-sunk)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)' }}>
-                  Cronograma de pagos — puedes editar cada celda
-                </span>
-                <button className="btn btn-ghost btn-xs" style={{ color: 'var(--bad)' }}
-                  onClick={() => { setSchedule(null); setShowSched(false) }}>
-                  Eliminar
-                </button>
-              </div>
-              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--bg-sunk)', position: 'sticky', top: 0 }}>
-                      {['N°','Fecha','Capital','Interés','Cuota'].map(h => (
-                        <th key={h} style={{ padding: '6px 10px', textAlign: h === 'N°' ? 'center' : 'right', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10, textTransform: 'uppercase' }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {schedule.map((row, i) => {
-                      const isPaid = i < yaP
-                      return (
-                        <tr key={i} style={{ background: isPaid ? 'color-mix(in srgb, var(--good) 6%, transparent)' : 'transparent', borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '5px 10px', textAlign: 'center', color: isPaid ? 'var(--good)' : 'var(--ink-mute)', fontWeight: isPaid ? 700 : 400 }}>
-                            {isPaid ? '✓' : row.n}
-                          </td>
-                          <td style={{ padding: '4px 6px' }}>
-                            <input type="date" value={row.fecha ?? ''} style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 120 }}
-                              onChange={e => updateScheduleRow(i, 'fecha', e.target.value)}/>
-                          </td>
-                          <td style={{ padding: '4px 6px' }}>
-                            <input type="text" inputMode="decimal" value={row.capital} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 72, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
-                              onChange={e => updateScheduleRow(i, 'capital', e.target.value)}/>
-                          </td>
-                          <td style={{ padding: '4px 6px' }}>
-                            <input type="text" inputMode="decimal" value={row.interes} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-base)', color: 'var(--ink)', width: 72, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
-                              onChange={e => updateScheduleRow(i, 'interes', e.target.value)}/>
-                          </td>
-                          <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
-                            {fmtPEN(row.total)}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg-sunk)' }}>
-                      <td colSpan={2} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--ink-mute)' }}>TOTALES</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12 }}>
-                        {fmtPEN(schedule.reduce((s, r) => s + r.capital, 0))}
-                      </td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12 }}>
-                        {fmtPEN(schedule.reduce((s, r) => s + r.interes, 0))}
-                      </td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>
-                        {fmtPEN(schedule.reduce((s, r) => s + r.total, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Summary */}
-          {(nCuotas > 0 || schedule) && (
-            <div style={{
-              padding: '10px 14px', borderRadius: 8, marginBottom: 4, fontSize: 12,
-              background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-elev))',
-              border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
-              display: 'flex', gap: 20, flexWrap: 'wrap',
-            }}>
-              {nCuotas > 0 && <>
-                <span>Cuotas pagadas: <strong style={{ color: 'var(--good)' }}>{yaP}</strong></span>
-                <span>Restantes: <strong style={{ color: 'var(--bad)' }}>{restantes}</strong></span>
-              </>}
-              {cuotaFija && <span>Cuota fija: <strong className="mono">{fmtPEN(cuotaFija)}</strong></span>}
-              {saldoFromSchedule != null && (
-                <span>Saldo pendiente: <strong className="mono">{fmtPEN(saldoFinal)}</strong></span>
-              )}
-            </div>
-          )}
-          {saldoFromSchedule != null && monto > 0 && (
-            <div style={{ marginBottom: 12, marginTop: 6 }}>
-              <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct * 100}%`, background: 'var(--accent)', borderRadius: 2 }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
-                <span>Pagado {(pct*100).toFixed(0)}%</span>
-                <span>{fmtPEN(monto - saldoFinal)} de {fmtPEN(monto)}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Dates + pay day */}
-          <div className="field-row">
-            <div className="field">
-              <label>Fecha inicio préstamo</label>
-              <input type="date" value={form.fechaInicio} onChange={e => set('fechaInicio', e.target.value)}/>
-            </div>
-            <div className="field">
-              <label>Fecha fin</label>
-              <input type="date" value={form.fechaFin} onChange={e => set('fechaFin', e.target.value)}/>
-            </div>
             <div className="field" style={{ flex: '0 0 auto', minWidth: 100 }}>
               <label>Día de pago</label>
-              <input type="number" min={1} max={31}
-                value={form.diaPago} onChange={e => set('diaPago', e.target.value)} placeholder="15"/>
+              <input type="number" min={1} max={31} value={form.diaPago}
+                onChange={e => set('diaPago', e.target.value)} placeholder="19"/>
             </div>
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+          {/* ── Step 2: Datos del cronograma ── */}
+          <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 12px', paddingTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)', marginBottom: 10 }}>
+              Datos del cronograma
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Monto neto desembolsado</label>
+                <div className="amount-input">
+                  <span className="amount-prefix mono">{curr}</span>
+                  <input type="text" inputMode="decimal" className="amount-field mono"
+                    value={form.montoOriginal} onChange={e => set('montoOriginal', e.target.value)} placeholder="0.00"/>
+                </div>
+              </div>
+              <div className="field">
+                <label>TCEA <span style={{ fontWeight:400, color:'var(--ink-faint)', fontSize:11 }}>(%)</span></label>
+                <input type="text" inputMode="decimal" value={form.tcea}
+                  onChange={e => set('tcea', e.target.value)} placeholder="Ej. 77.15"/>
+              </div>
+              <div className="field">
+                <label>N° de cuotas</label>
+                <input type="number" min={1} value={form.totalCuotas}
+                  onChange={e => set('totalCuotas', e.target.value)} placeholder="12"/>
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Fecha del primer pago</label>
+                <input type="date" value={form.fechaPrimerPago}
+                  onChange={e => set('fechaPrimerPago', e.target.value)}/>
+              </div>
+              <div className="field">
+                <label>
+                  Cuotas ya pagadas{' '}
+                  <span style={{ fontWeight:400, color:'var(--ink-faint)', fontSize:11 }}>(si es préstamo histórico)</span>
+                </label>
+                <input type="number" min={0} max={nCuotas || 999} value={form.cuotasYaPagadas}
+                  onChange={e => set('cuotasYaPagadas', e.target.value)} placeholder="0"/>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Step 3: Cronograma ── */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-faint)' }}>
+                Cronograma de pagos
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {schedule && (
+                  <button type="button" className="btn btn-ghost btn-xs" style={{ color: 'var(--bad)' }}
+                    onClick={() => setSchedule(null)}>
+                    Borrar
+                  </button>
+                )}
+                <button type="button" className="btn btn-soft" style={{ fontSize: 12 }}
+                  disabled={!canCompute}
+                  onClick={handleAutoCompute}
+                  title={!canCompute ? 'Completa monto, TCEA y cuotas primero' : ''}
+                >
+                  ⚡ {schedule ? 'Recalcular' : 'Auto-calcular'}
+                </button>
+              </div>
+            </div>
+
+            {!schedule && (
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13, background: 'var(--bg-sunk)', borderRadius: 8 }}>
+                {canCompute
+                  ? 'Pulsa ⚡ Auto-calcular para generar el cronograma completo'
+                  : 'Ingresa monto, TCEA y N° de cuotas para calcular'}
+              </div>
+            )}
+
+            {schedule && (
+              <>
+                {/* Summary strip */}
+                <div style={{ display: 'flex', gap: 16, padding: '8px 12px', background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-elev))', borderRadius: 8, fontSize: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <span>Cuota fija: <strong className="mono" style={{ color: 'var(--accent)' }}>{fmtPEN(cuotaFija)}</strong></span>
+                  <span>Total intereses: <strong className="mono">{fmtPEN(schedule.reduce((s,r) => s+r.interes, 0))}</strong></span>
+                  {yaP > 0 && <span>Saldo pendiente: <strong className="mono" style={{ color: 'var(--bad)' }}>{fmtPEN(saldoFinal)}</strong></span>}
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>Puedes editar cualquier celda para ajustar al estado de cuenta del banco</span>
+                </div>
+
+                {/* Progress */}
+                {yaP > 0 && monto > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct*100}%`, background: 'var(--accent)', borderRadius: 2 }}/>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>
+                      <span>✓ {yaP} de {nCuotas} pagadas ({(pct*100).toFixed(0)}%)</span>
+                      <span>{fmtPEN(saldoFinal)} pendiente</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Table */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                        <tr style={{ background: 'var(--bg-sunk)' }}>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10, width: 32 }}>N°</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10 }}>Fecha</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10 }}>Capital</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--ink-mute)', fontSize: 10 }}>Interés</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 10 }}>Cuota</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schedule.map((row, i) => {
+                          const isPaid   = i < yaP
+                          const isCurr   = i === yaP
+                          return (
+                            <tr key={i} style={{
+                              background: isPaid ? 'color-mix(in srgb, var(--good) 5%, transparent)'
+                                : isCurr ? 'color-mix(in srgb, var(--accent) 6%, transparent)'
+                                : 'transparent',
+                              borderBottom: '1px solid var(--border)',
+                            }}>
+                              <td style={{ padding: '4px 8px', textAlign: 'center', fontSize: 11,
+                                color: isPaid ? 'var(--good)' : isCurr ? 'var(--accent)' : 'var(--ink-faint)',
+                                fontWeight: isPaid || isCurr ? 700 : 400 }}>
+                                {isPaid ? '✓' : isCurr ? '▶' : row.n}
+                              </td>
+                              <td style={{ padding: '3px 6px' }}>
+                                <input type="date" value={row.fecha ?? ''}
+                                  style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--ink)', width: 118 }}
+                                  onChange={e => updateScheduleRow(i, 'fecha', e.target.value)}/>
+                              </td>
+                              <td style={{ padding: '3px 5px' }}>
+                                <input type="text" inputMode="decimal" value={row.capital}
+                                  style={{ fontSize: 12, padding: '2px 5px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--ink)', width: 70, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
+                                  onChange={e => updateScheduleRow(i, 'capital', e.target.value)}/>
+                              </td>
+                              <td style={{ padding: '3px 5px' }}>
+                                <input type="text" inputMode="decimal" value={row.interes}
+                                  style={{ fontSize: 12, padding: '2px 5px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--ink)', width: 70, textAlign: 'right', fontFamily: 'var(--font-mono)' }}
+                                  onChange={e => updateScheduleRow(i, 'interes', e.target.value)}/>
+                              </td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700,
+                                fontFamily: 'var(--font-mono)',
+                                color: isCurr ? 'var(--accent)' : isPaid ? 'var(--good)' : 'var(--ink)' }}>
+                                {fmtPEN(row.total)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg-sunk)' }}>
+                          <td colSpan={2} style={{ padding: '5px 8px', fontSize: 11, fontWeight: 700, color: 'var(--ink-mute)' }}>Total</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12 }}>
+                            {fmtPEN(schedule.reduce((s,r) => s+r.capital, 0))}
+                          </td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--ink-mute)' }}>
+                            {fmtPEN(schedule.reduce((s,r) => s+r.interes, 0))}
+                          </td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>
+                            {fmtPEN(schedule.reduce((s,r) => s+r.total, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginTop: 4 }}>
             <input type="checkbox" checked={form.activo} onChange={e => set('activo', e.target.checked)}/>
             <span>Préstamo activo</span>
           </label>
@@ -346,13 +332,16 @@ function LoanModal({ initial, onSave, onClose }) {
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" disabled={!valid}
             onClick={() => {
-              const totC  = Number(form.totalCuotas)     || 0
-              const yaP2  = Number(form.cuotasYaPagadas) || 0
-              const rest2 = Math.max(0, totC - yaP2)
+              const totC = Number(form.totalCuotas)     || 0
+              const yaP2 = Number(form.cuotasYaPagadas) || 0
               const cuota = schedule ? (schedule[0]?.total ?? 0) : 0
               const saldo = schedule
                 ? Math.round(schedule.slice(yaP2).reduce((s, r) => s + r.capital, 0) * 100) / 100
                 : monto
+              // Derive fechaFin from schedule last row or compute
+              const fechaFin = schedule
+                ? (schedule[schedule.length - 1]?.fecha ?? null)
+                : null
               onSave({
                 nombre:          form.nombre,
                 banco:           form.banco,
@@ -365,8 +354,8 @@ function LoanModal({ initial, onSave, onClose }) {
                 tcea:            Number(form.tcea) || 0,
                 tasaAnual:       Number(form.tcea) || 0,
                 fechaPrimerPago: form.fechaPrimerPago || null,
-                fechaInicio:     form.fechaInicio || null,
-                fechaFin:        form.fechaFin   || null,
+                fechaInicio:     form.fechaPrimerPago || null,
+                fechaFin,
                 diaPago:         Number(form.diaPago) || null,
                 moneda:          form.moneda,
                 activo:          form.activo,
