@@ -516,8 +516,16 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
   // Next cuota data from schedule
   const nextSchedRow = loan.schedule ? loan.schedule[cuotasPagadas] : null
 
-  const daysLeft = daysUntilPayment(loan.diaPago)
-  const urgente  = daysLeft !== null && daysLeft <= 5 && saldo > 0
+  // Use exact schedule date for next unpaid cuota (if available), otherwise fall back to diaPago day-of-month
+  const daysLeft = (() => {
+    if (nextSchedRow?.fecha) {
+      const today  = new Date(); today.setHours(0, 0, 0, 0)
+      const target = new Date(nextSchedRow.fecha + 'T00:00:00')
+      return Math.round((target - today) / 86400000)
+    }
+    return daysUntilPayment(loan.diaPago)
+  })()
+  const urgente  = daysLeft !== null && daysLeft <= 5 && daysLeft >= 0 && saldo > 0
   const isPaid   = saldo === 0
   const curr     = loan.moneda === 'USD' ? 'US$' : 'S/'
 
@@ -621,9 +629,13 @@ function LoanCard({ loan, payments, onEdit, onDelete, onPay }) {
           {loan.tcea > 0 && (
             <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-sunk)', color: 'var(--ink-mute)' }}>TCEA {loan.tcea}%</span>
           )}
-          {loan.diaPago && !isPaid && (
+          {(loan.diaPago || nextSchedRow?.fecha) && !isPaid && (
             <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: urgente ? 'color-mix(in srgb, var(--warn) 15%, var(--bg-elev))' : 'var(--bg-sunk)', color: urgente ? 'var(--warn)' : 'var(--ink-mute)', fontWeight: urgente ? 700 : 400 }}>
-              {urgente ? `⚠ Pago en ${daysLeft}d` : `Día de pago: ${loan.diaPago}`}
+              {urgente
+                ? `⚠ Pago en ${daysLeft}d`
+                : nextSchedRow?.fecha
+                  ? `Próx. pago: ${nextSchedRow.fecha}`
+                  : `Día de pago: ${loan.diaPago}`}
             </span>
           )}
           {loan.schedule && (
@@ -731,8 +743,20 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
       return s + (l.montoOriginal ?? 0) + intereses
     }, 0)
 
-  const urgentLoans = active.filter(l => { const d = daysUntilPayment(l.diaPago); return d !== null && d <= 7 })
-    .sort((a, b) => daysUntilPayment(a.diaPago) - daysUntilPayment(b.diaPago))
+  function daysUntilNextCuota(loan) {
+    const myP = loanPayments.filter(p => p.loanId === loan.id)
+    const cuotasPagadas = (loan.cuotasYaPagadas || 0) + myP.length
+    const nextRow = loan.schedule ? loan.schedule[cuotasPagadas] : null
+    if (nextRow?.fecha) {
+      const today  = new Date(); today.setHours(0, 0, 0, 0)
+      const target = new Date(nextRow.fecha + 'T00:00:00')
+      return Math.round((target - today) / 86400000)
+    }
+    return daysUntilPayment(loan.diaPago)
+  }
+
+  const urgentLoans = active.filter(l => { const d = daysUntilNextCuota(l); return d !== null && d <= 7 && d >= 0 })
+    .sort((a, b) => daysUntilNextCuota(a) - daysUntilNextCuota(b))
 
   function handleSave(data) {
     if (modal === 'new') onAddLoan({ ...data, id: 'loan-' + Date.now(), createdAt: new Date().toISOString() })
@@ -804,7 +828,7 @@ export default function LoansView({ loans = [], loanPayments = [], accounts = []
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--warn)', marginBottom: 4 }}>Pagos próximos</div>
             {urgentLoans.map(l => {
-              const d = daysUntilPayment(l.diaPago)
+              const d = daysUntilNextCuota(l)
               const myP = loanPayments.filter(p => p.loanId === l.id)
               const cuotaN = (l.cuotasYaPagadas || 0) + myP.length + 1
               return (
